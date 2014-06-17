@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Express 2013 for Windows Desktop
+VisualStudioVersion = 12.0.30501.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pmd_mt", "pmd_mt\pmd_mt.vcxproj", "{9B54EF32-6D09-4456-8D3A-4189DC60628C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9B54EF32-6D09-4456-8D3A-4189DC60628C}.Debug|Win32.ActiveCfg = Debug|Win32
+		{9B54EF32-6D09-4456-8D3A-4189DC60628C}.Debug|Win32.Build.0 = Debug|Win32
+		{9B54EF32-6D09-4456-8D3A-4189DC60628C}.Release|Win32.ActiveCfg = Release|Win32
+		{9B54EF32-6D09-4456-8D3A-4189DC60628C}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
