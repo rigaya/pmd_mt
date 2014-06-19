@@ -319,27 +319,32 @@ void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2) {
 //		事前計算関数
 //---------------------------------------------------------------------
 void make_table(int strength, int threshold, int useExp, int cPMD) {
-	double range = 4.0;
-	double strength2 = strength/100.0;
+	const double range = 4.0;
+	const double strength2 = strength/100.0;
 	//閾値の設定を変えた方が使いやすいです
-	double threshold2 = (cPMD) ? pow(2.0, threshold/10.0) : threshold*16/10.0*threshold*16/10.0;
-	double temp;
-
-	for (int x = -PMD_TABLE_SIZE; x <= PMD_TABLE_SIZE; x++) {
-		if (cPMD) {
-			//修正PMD用
-			if (useExp)
-				PMD[x+PMD_TABLE_SIZE] = int((1<<16)/range * (( exp( -x*x / threshold2 ) )*strength2));
-			else
-				PMD[x+PMD_TABLE_SIZE] = int((1<<16)/range * ((1.0/( 1.0 + ( x*x / threshold2 ) ))*strength2));
-			//PMD用
+	const double threshold2 = (cPMD) ? pow(2.0, threshold/10.0) : threshold*16/10.0*threshold*16/10.0;
+	const double inv_threshold2 = 1.0 / threshold2;
+	if (cPMD) {
+		const double temp = (1<<16)/range * strength2;
+		if (useExp) {
+			for (int x = -PMD_TABLE_SIZE; x <= PMD_TABLE_SIZE; x++) {
+				PMD[x+PMD_TABLE_SIZE] = int(temp * exp(-x*x * inv_threshold2));
+			}
 		} else {
-			if (useExp) {
-				temp = (exp( -x*x / threshold2 ) )*strength2 * x / range;
-				PMD[x+PMD_TABLE_SIZE] = int((temp<0) ? temp-0.5 : temp+0.5);
-			} else {
-				temp = (1.0/( 1.0 + x*x / threshold2 ))*strength2 * x /range;
-				PMD[x+PMD_TABLE_SIZE] = int((temp<0) ? temp-0.5 : temp+0.5);
+			for (int x = -PMD_TABLE_SIZE; x <= PMD_TABLE_SIZE; x++) {
+				PMD[x+PMD_TABLE_SIZE] = int(temp * (1.0/( 1.0 + ( x*x * inv_threshold2 ) )));
+			}
+		}
+	} else {
+		if (useExp) {
+			for (int x = -PMD_TABLE_SIZE; x <= PMD_TABLE_SIZE; x++) {
+				double temp = (exp( -x*x * inv_threshold2 ) )* strength2 * x / range;
+				PMD[x+PMD_TABLE_SIZE] = int(temp + 0.5 - (double)(temp<0));
+			}
+		} else {
+			for (int x = -PMD_TABLE_SIZE; x <= PMD_TABLE_SIZE; x++) {
+				double temp = (1.0/( 1.0 + x*x * inv_threshold2 ))*strength2 * x /range;
+				PMD[x+PMD_TABLE_SIZE] = int(temp + 0.5 - (double)(temp<0));
 			}
 		}
 	}
