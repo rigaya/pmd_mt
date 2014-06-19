@@ -60,7 +60,8 @@ PIETRO PERONAさんとJITENDRA MALIKさんのアルゴリズム
 //		プロトタイプ宣言
 //---------------------------------------------------------------------
 // Perona-Malik エッジ停止関数
-int *PMD = NULL;
+static int *PMD = NULL;
+static PIXEL_YC *gauss = NULL;
 static const PMD_MT_FUNC *func = NULL;
 static PERFORMANCE_CHECKER pmd_qpc = { 0 };
 
@@ -353,13 +354,26 @@ BOOL func_WndProc( HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam,void *edit
 		//フィルタがアクティブでなければメモリを開放
 		case WM_FILTER_CHANGE_ACTIVE:
 			if (!(fp->exfunc->is_filter_active(fp))) {
-				free(PMD);
-				PMD = NULL;
+				if (PMD) {
+					free(PMD);
+					PMD = NULL;
+				}
+				if (gauss) {
+					_aligned_free(gauss);
+					gauss = NULL;
+				}
 			}
 			break;
 		//終了時にメモリを開放
 		case WM_FILTER_EXIT:
-			free(PMD);
+			if (PMD) {
+				free(PMD);
+				PMD = NULL;
+			}
+			if (gauss) {
+				_aligned_free(gauss);
+				gauss = NULL;
+			}
 			break;
 	}
 	return FALSE;
@@ -398,18 +412,18 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
 	
 	//事前に計算した値を入れる領域を確保
 	//領域を確保できなければここで処理は止めてしまいます
-	if (!PMD) {
-		PMD = (int *)malloc((PMD_TABLE_SIZE*2+1) * sizeof(int));
-		if (!PMD) return TRUE;
+	if (NULL == PMD) {
+		if (NULL == (PMD = (int *)malloc((PMD_TABLE_SIZE*2+1) * sizeof(int))))
+			return TRUE;
 		make_table(strength, threshold, useExp, useCPMD);
 	}
 
-	//ぼかした輝度を格納する領域
-	PIXEL_YC *gauss = NULL;
 	//修正PMD法ならばガウスぼかしをおこなう
 	if (useCPMD) {
-		gauss = (PIXEL_YC *)malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC));
-		if (NULL == gauss) return TRUE;
+		if (NULL == gauss) {
+			if (NULL == (gauss = (PIXEL_YC *)_aligned_malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC) + 32, 32)))
+				return TRUE;
+		}
 
 		//横軸のガウスぼかし、続けて縦軸のガウスぼかしをマルチスレッドで呼び出す
 		//横軸の処理を完全に終えてから縦軸の処理をしなければならないので、メインの関数をマルチスレッドで呼び出してそこから縦軸横軸と分岐するのではなく、一つ一つマルチスレッドで呼び出します
@@ -477,9 +491,6 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
 		SWAP(PIXEL_YC *, fpip->ycp_edit, fpip->ycp_temp);
 	}
 
-	if (gauss) {
-		free(gauss);
-	}
 	get_qp_counter(&pmd_qpc.tmp[1]);
 	add_qpctime(&pmd_qpc.value[0], pmd_qpc.tmp[1] - pmd_qpc.tmp[0]);
 #if CHECK_PERFORMANCE
