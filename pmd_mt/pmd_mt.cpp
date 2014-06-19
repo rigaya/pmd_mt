@@ -391,15 +391,17 @@ BOOL func_init(FILTER *fp) {
 BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
 	get_qp_counter(&pmd_qpc.tmp[0]);
 
-	const int useCPMD = !!fp->check[1];
-	const int useExp = !!fp->check[0];
+	const int useCPMD   = !!fp->check[1];
+	const int useExp    = !!fp->check[0];
+	const int strength  = fp->track[0];
+	const int threshold = fp->track[1];
 	
 	//事前に計算した値を入れる領域を確保
 	//領域を確保できなければここで処理は止めてしまいます
 	if (!PMD) {
 		PMD = (int *)malloc((PMD_TABLE_SIZE*2+1) * sizeof(int));
 		if (!PMD) return TRUE;
-		make_table(fp->track[0], fp->track[1], useExp, useCPMD);
+		make_table(strength, threshold, useExp, useCPMD);
 	}
 
 	//ぼかした輝度を格納する領域
@@ -442,8 +444,8 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
 		PMD_MT_PRM prm;
 		prm.pmd = PMD;
 		prm.gauss = gauss;
-		prm.strength = fp->track[0];
-		prm.threshold = fp->track[1];
+		prm.strength = strength;
+		prm.threshold = threshold;
 		//メインの処理関数をマルチスレッドで呼び出します
 		get_qp_counter(&pmd_qpc.tmp[5]);
 		fp->exfunc->exec_multi_thread_func(func->main_func[useCPMD][useExp], (void *)fpip, (void *)&prm);
