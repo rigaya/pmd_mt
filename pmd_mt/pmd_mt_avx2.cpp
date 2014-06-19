@@ -75,7 +75,8 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 
 					_mm256_store_si256((__m256i *)(tmp_ptr(y+4) + (i<<5)), ySrc0);
 				};
-				_mm_prefetch((char *)src + 3 * max_w * sizeof(PIXEL_YC), _MM_HINT_T0);
+				_mm_prefetch((char *)src + 3 * max_w * sizeof(PIXEL_YC) +  0, _MM_HINT_T0);
+				_mm_prefetch((char *)src + 3 * max_w * sizeof(PIXEL_YC) + 64, _MM_HINT_T0);
 				guassianH_process_internal(0);
 				guassianH_process_internal(1);
 				guassianH_process_internal(2);
@@ -144,7 +145,7 @@ void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 			ySrc2 = _mm256_loadu_si256((__m256i *)(buf + 32));
 			ySrc3 = _mm256_loadu_si256((__m256i *)(buf + 64));
 			ySrc4 = _mm256_loadu_si256((__m256i *)(buf + 96));
-
+			
 			guassianV_process(dst, ySrc0, ySrc1, ySrc2, ySrc3, ySrc4);
 
 			ySrc0 = ySrc3;
