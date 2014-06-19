@@ -58,7 +58,7 @@ static const PMD_MT_FUNC FUNC_LIST[] = {
 };
 
 const PMD_MT_FUNC *get_pmd_func_list() {
-	const DWORD simd_avail = get_availableSIMD() & ~AVX2;
+	const DWORD simd_avail = get_availableSIMD();
 	for (int i = 0; i < _countof(FUNC_LIST); i++) {
 		if ((FUNC_LIST[i].simd & simd_avail) == FUNC_LIST[i].simd) {
 			return &FUNC_LIST[i];
