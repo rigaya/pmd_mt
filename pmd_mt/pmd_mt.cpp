@@ -51,12 +51,20 @@ PIETRO PERONAさんとJITENDRA MALIKさんのアルゴリズム
 #include <stdlib.h>	//mallocを使用するので
 #include <math.h>	//powを使用するので
 #include "filter.h"
+#include "pmd_mt.h"
+#if CHECK_PERFORMANCE
+#include <stdio.h>
+#endif
 
 //---------------------------------------------------------------------
 //		プロトタイプ宣言
 //---------------------------------------------------------------------
 // Perona-Malik エッジ停止関数
 int *PMD = NULL;
+static const PMD_MT_FUNC *func = NULL;
+static PERFORMANCE_CHECKER pmd_qpc = { 0 };
+
+#define SWAP(type,x,y) { type temp = x; x = y; y = temp; }
 
 //---------------------------------------------------------------------
 //		フィルタ構造体定義
@@ -83,7 +91,7 @@ FILTER_DLL filter = {
 	check_name,					//	チェックボックスの名前郡へのポインタ
 	check_default,				//	チェックボックスの初期値郡へのポインタ
 	func_proc,					//	フィルタ処理関数へのポインタ (NULLなら呼ばれません)
-	NULL,						//	開始時に呼ばれる関数へのポインタ (NULLなら呼ばれません)
+	func_init,					//	開始時に呼ばれる関数へのポインタ (NULLなら呼ばれません)
 	NULL,						//	終了時に呼ばれる関数へのポインタ (NULLなら呼ばれません)
 	func_update,				//	設定が変更されたときに呼ばれる関数へのポインタ (NULLなら呼ばれません)
 	func_WndProc,				//	設定ウィンドウにウィンドウメッセージが来た時に呼ばれる関数へのポインタ (NULLなら呼ばれません)
@@ -109,18 +117,19 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
 	int y_end   = (fpip->h * (thread_id+1)) / thread_num;
 
 	PIXEL_YC *ycp, *ycp2;
+	PIXEL_YC *gauss = (PIXEL_YC *)param2;
 	const int w = fpip->w-2;
 	const int max_w = fpip->max_w;
 
 	//" 1 : 4 : 6 : 4 : 1 "の比率で横軸をぼかしていきます
 	//端は条件判定をした方がソースがすっきりしますが、処理が遅くなるので強引に計算しています
 	for (int y = y_start; y < y_end; y++) {
-		ycp  = fpip->ycp_edit + y*max_w;
-		ycp2 = fpip->ycp_temp + y*max_w;
+		ycp  = fpip->ycp_temp + y*max_w;
+		ycp2 = gauss + y*max_w;
 		//左端
-		ycp2->y  = (ycp[ 2].y  + (ycp[ 1].y <<2) + (ycp[0].y *6) + (ycp[1].y <<2) + ycp[2].y ) >> 4;
-		ycp2->cb = (ycp[ 2].cb + (ycp[ 1].cb<<2) + (ycp[0].cb*6) + (ycp[1].cb<<2) + ycp[2].cb) >> 4;
-		ycp2->cr = (ycp[ 2].cr + (ycp[ 1].cr<<2) + (ycp[0].cr*6) + (ycp[1].cr<<2) + ycp[2].cr) >> 4;
+		ycp2->y  = (ycp[ 0].y  + (ycp[ 0].y <<2) + (ycp[0].y *6) + (ycp[1].y <<2) + ycp[2].y ) >> 4;
+		ycp2->cb = (ycp[ 0].cb + (ycp[ 0].cb<<2) + (ycp[0].cb*6) + (ycp[1].cb<<2) + ycp[2].cb) >> 4;
+		ycp2->cr = (ycp[ 0].cr + (ycp[ 0].cr<<2) + (ycp[0].cr*6) + (ycp[1].cr<<2) + ycp[2].cr) >> 4;
 		ycp++;	ycp2++;
 		//左端+1
 		ycp2->y  = (ycp[-1].y  + (ycp[-1].y <<2) + (ycp[0].y *6) + (ycp[1].y <<2) + ycp[2].y ) >> 4;
@@ -140,9 +149,9 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
 		ycp2->cr = (ycp[-2].cr + (ycp[-1].cr<<2) + (ycp[0].cr*6) + (ycp[1].cr<<2) + ycp[1].cr) >> 4;
 		ycp++;	ycp2++;
 		//右端
-		ycp2->y  = (ycp[-2].y  + (ycp[-1].y <<2) + (ycp[0].y *6) + (ycp[-1].y <<2) + ycp[-2].y ) >> 4;
-		ycp2->cb = (ycp[-2].cb + (ycp[-1].cb<<2) + (ycp[0].cb*6) + (ycp[-1].cb<<2) + ycp[-2].cb) >> 4;
-		ycp2->cr = (ycp[-2].cr + (ycp[-1].cr<<2) + (ycp[0].cr*6) + (ycp[-1].cr<<2) + ycp[-2].cr) >> 4;
+		ycp2->y  = (ycp[-2].y  + (ycp[-1].y <<2) + (ycp[0].y *6) + (ycp[0].y <<2) + ycp[0].y ) >> 4;
+		ycp2->cb = (ycp[-2].cb + (ycp[-1].cb<<2) + (ycp[0].cb*6) + (ycp[0].cb<<2) + ycp[0].cb) >> 4;
+		ycp2->cr = (ycp[-2].cr + (ycp[-1].cr<<2) + (ycp[0].cr*6) + (ycp[0].cr<<2) + ycp[0].cr) >> 4;
 	}
 }
 //---------------------------------------------------------------------
@@ -151,7 +160,7 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
 //処理内容は横軸とまったく同じです
 void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
-	PIXEL_YC *gauss			= (PIXEL_YC *)param2;
+	PIXEL_YC *ycp_buf = (PIXEL_YC *)param2;
 	int y_start = (fpip->h * thread_id    ) / thread_num;
 	int y_end   = (fpip->h * (thread_id+1)) / thread_num;
 
@@ -161,22 +170,22 @@ void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
 	const int max_w = fpip->max_w;
 
 	for (int x = 0; x < w; x++) {
-		ycp  = fpip->ycp_temp + x + y_start*max_w;
-		gref = gauss          + x + y_start*w;
+		ycp  = fpip->ycp_edit + x + y_start*max_w;
+		gref = ycp_buf + x + y_start*max_w;
 
 		int y = y_start;
 
 		if (0 == y_start) {
 			//1行目
-			gref->y  = (ycp[  max_w<<1].y  + (ycp[ max_w].y <<2) + (ycp[0].y *6) + (ycp[max_w].y <<2) + ycp[max_w<<1].y ) >> 4;
-			gref->cb = (ycp[  max_w<<1].cb + (ycp[ max_w].cb<<2) + (ycp[0].cb*6) + (ycp[max_w].cb<<2) + ycp[max_w<<1].cb) >> 4;
-			gref->cr = (ycp[  max_w<<1].cr + (ycp[ max_w].cr<<2) + (ycp[0].cr*6) + (ycp[max_w].cr<<2) + ycp[max_w<<1].cr) >> 4;
-			ycp += max_w;	gref += w;
+			gref->y  = (ycp[         0].y  + (ycp[     0].y <<2) + (ycp[0].y *6) + (ycp[max_w].y <<2) + ycp[max_w<<1].y ) >> 4;
+			gref->cb = (ycp[         0].cb + (ycp[     0].cb<<2) + (ycp[0].cb*6) + (ycp[max_w].cb<<2) + ycp[max_w<<1].cb) >> 4;
+			gref->cr = (ycp[         0].cr + (ycp[     0].cr<<2) + (ycp[0].cr*6) + (ycp[max_w].cr<<2) + ycp[max_w<<1].cr) >> 4;
+			ycp += max_w;	gref += max_w;
 			//2行目
 			gref->y  = (ycp[ -max_w   ].y  + (ycp[-max_w].y <<2) + (ycp[0].y *6) + (ycp[max_w].y <<2) + ycp[max_w<<1].y ) >> 4;
 			gref->cb = (ycp[ -max_w   ].cb + (ycp[-max_w].cb<<2) + (ycp[0].cb*6) + (ycp[max_w].cb<<2) + ycp[max_w<<1].cb) >> 4;
 			gref->cr = (ycp[ -max_w   ].cr + (ycp[-max_w].cr<<2) + (ycp[0].cr*6) + (ycp[max_w].cr<<2) + ycp[max_w<<1].cr) >> 4;
-			ycp += max_w;	gref += w;
+			ycp += max_w;	gref += max_w;
 
 			y += 2;
 		}
@@ -185,7 +194,7 @@ void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
 			gref->y  = (ycp[-(max_w<<1)].y  + (ycp[-max_w].y <<2) + (ycp[0].y *6) + (ycp[max_w].y <<2) + ycp[max_w<<1].y ) >> 4;
 			gref->cb = (ycp[-(max_w<<1)].cb + (ycp[-max_w].cb<<2) + (ycp[0].cb*6) + (ycp[max_w].cb<<2) + ycp[max_w<<1].cb) >> 4;
 			gref->cr = (ycp[-(max_w<<1)].cr + (ycp[-max_w].cr<<2) + (ycp[0].cr*6) + (ycp[max_w].cr<<2) + ycp[max_w<<1].cr) >> 4;
-			ycp += max_w;	gref += w;
+			ycp += max_w;	gref += max_w;
 		}
 
 		if (y_end==fpip->h) {
@@ -193,11 +202,11 @@ void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
 			gref->y  = (ycp[-(max_w<<1)].y  + (ycp[-max_w].y <<2) + (ycp[0].y *6) + (ycp[max_w].y <<2) + ycp[max_w].y ) >> 4;
 			gref->cb = (ycp[-(max_w<<1)].cb + (ycp[-max_w].cb<<2) + (ycp[0].cb*6) + (ycp[max_w].cb<<2) + ycp[max_w].cb) >> 4;
 			gref->cr = (ycp[-(max_w<<1)].cr + (ycp[-max_w].cr<<2) + (ycp[0].cr*6) + (ycp[max_w].cr<<2) + ycp[max_w].cr) >> 4;
-			ycp += max_w;	gref += w;
+			ycp += max_w;	gref += max_w;
 			//最終行
-			gref->y  = (ycp[-(max_w<<1)].y  + (ycp[-max_w].y <<2) + (ycp[0].y *6) + (ycp[-max_w].y <<2) + ycp[-(max_w<<1)].y ) >> 4;
-			gref->cb = (ycp[-(max_w<<1)].cb + (ycp[-max_w].cb<<2) + (ycp[0].cb*6) + (ycp[-max_w].cb<<2) + ycp[-(max_w<<1)].cb) >> 4;
-			gref->cr = (ycp[-(max_w<<1)].cr + (ycp[-max_w].cr<<2) + (ycp[0].cr*6) + (ycp[-max_w].cr<<2) + ycp[-(max_w<<1)].cr) >> 4;
+			gref->y  = (ycp[-(max_w<<1)].y  + (ycp[-max_w].y <<2) + (ycp[0].y *6) + (ycp[     0].y <<2) + ycp[          0].y ) >> 4;
+			gref->cb = (ycp[-(max_w<<1)].cb + (ycp[-max_w].cb<<2) + (ycp[0].cb*6) + (ycp[     0].cb<<2) + ycp[          0].cb) >> 4;
+			gref->cr = (ycp[-(max_w<<1)].cr + (ycp[-max_w].cr<<2) + (ycp[0].cr*6) + (ycp[     0].cr<<2) + ycp[          0].cr) >> 4;
 		}
 	}
 }
@@ -205,54 +214,60 @@ void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
 //---------------------------------------------------------------------
 //		修正PDMマルチスレッド関数
 //---------------------------------------------------------------------
-void PMD_MT(int thread_id, int thread_num, void *param1, void *param2) {
+void pmd_mt(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
-	PIXEL_YC *gauss			= (PIXEL_YC *)param2;
-	int y_start = (fpip->h *  thread_id   ) / thread_num;
-	int y_end   = (fpip->h * (thread_id+1)) / thread_num;
+	PIXEL_YC *gauss			= ((PMD_MT_PRM *)param2)->gauss;
+	const int y_start = (fpip->h *  thread_id   ) / thread_num;
+	const int y_end   = (fpip->h * (thread_id+1)) / thread_num;
 
 	//以下、修正PMD法によるノイズ除去
 	const int w = fpip->w;
 	const int max_w = fpip->max_w;
-	const int ys = (y_start==0) ? 1 : y_start;
-	const int h = (y_end==fpip->h) ? y_end-1 : y_end;
+	const int y_fin = (y_end==fpip->h) ? y_end-1 : y_end;
 
 	PIXEL_YC *dst, *src, *gref;
-	int* pmdp = &PMD[4500];
+	int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
+	
+	if (0 == y_start)
+		memcpy(fpip->ycp_temp, fpip->ycp_edit, w * sizeof(PIXEL_YC));
 
-	for (int y = ys; y < h; y++) {
+	for (int y = max(1, y_start); y < y_fin; y++) {
 		src  = fpip->ycp_edit + y*max_w +1;
 		dst  = fpip->ycp_temp + y*max_w +1;
-		gref = gauss          + y*w     +1;
-
+		gref = gauss          + y*max_w +1;
+		
+		*(dst-1) = *(src-1);
 		//for (int x = 1; x < w-1; x++) {	//判定するたびに"-1"の計算をしてしまうので下に変更
 		for (int x = 2; x < w; x++) {
 			dst->y  = src->y  + (short)(( 
-					((src-max_w)->y  - src->y )*pmdp[(gref-w)->y  - gref->y ] +	//上
-					((src-1    )->y  - src->y )*pmdp[(gref-1)->y  - gref->y ] +	//左
-					((src+1    )->y  - src->y )*pmdp[(gref+1)->y  - gref->y ] +	//右
-					((src+max_w)->y  - src->y )*pmdp[(gref+w)->y  - gref->y ]	//下
+					((src-max_w)->y  - src->y )*pmdp[(gref-max_w)->y  - gref->y ] +	//上
+					((src-1    )->y  - src->y )*pmdp[(gref-1)->y      - gref->y ] +	//左
+					((src+1    )->y  - src->y )*pmdp[(gref+1)->y      - gref->y ] +	//右
+					((src+max_w)->y  - src->y )*pmdp[(gref+max_w)->y  - gref->y ]	//下
 					) >>16 );
 			dst->cb = src->cb + (short)((
-					((src-max_w)->cb - src->cb)*pmdp[(gref-w)->cb - gref->cb] +	//上
-					((src-1    )->cb - src->cb)*pmdp[(gref-1)->cb - gref->cb] +	//左
-					((src+1    )->cb - src->cb)*pmdp[(gref+1)->cb - gref->cb] +	//右
-					((src+max_w)->cb - src->cb)*pmdp[(gref+w)->cb - gref->cb]	//下
+					((src-max_w)->cb - src->cb)*pmdp[(gref-max_w)->cb - gref->cb] +	//上
+					((src-1    )->cb - src->cb)*pmdp[(gref-1)->cb     - gref->cb] +	//左
+					((src+1    )->cb - src->cb)*pmdp[(gref+1)->cb     - gref->cb] +	//右
+					((src+max_w)->cb - src->cb)*pmdp[(gref+max_w)->cb - gref->cb]	//下
 					) >>16 );
 			dst->cr = src->cr + (short)((
-					((src-max_w)->cr - src->cr)*pmdp[(gref-w)->cr - gref->cr] +	//上
-					((src-1    )->cr - src->cr)*pmdp[(gref-1)->cr - gref->cr] +	//左
-					((src+1    )->cr - src->cr)*pmdp[(gref+1)->cr - gref->cr] +	//右
-					((src+max_w)->cr - src->cr)*pmdp[(gref+w)->cr - gref->cr]	//下
+					((src-max_w)->cr - src->cr)*pmdp[(gref-max_w)->cr - gref->cr] +	//上
+					((src-1    )->cr - src->cr)*pmdp[(gref-1)->cr     - gref->cr] +	//左
+					((src+1    )->cr - src->cr)*pmdp[(gref+1)->cr     - gref->cr] +	//右
+					((src+max_w)->cr - src->cr)*pmdp[(gref+max_w)->cr - gref->cr]	//下
 					) >>16 );
 			dst++, src++, gref++;
 		}
+		*dst = *src;
 	}
+	if (y_end==fpip->h)
+		memcpy(fpip->ycp_temp + (fpip->h-1) * max_w, fpip->ycp_edit + (fpip->h-1) * max_w, w * sizeof(PIXEL_YC));
 }
 //---------------------------------------------------------------------
 //		Anisotropicマルチスレッド関数
 //---------------------------------------------------------------------
-void Anisotropic_MT(int thread_id, int thread_num, void *param1, void *param2) {
+void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
 	int y_start = (fpip->h * thread_id    ) / thread_num;
 	int y_end   = (fpip->h * (thread_id+1)) / thread_num;
@@ -260,16 +275,19 @@ void Anisotropic_MT(int thread_id, int thread_num, void *param1, void *param2) {
 	//以下、PMD法によるノイズ除去
 	const int w = fpip->w;
 	const int max_w = fpip->max_w;
-	const int ys = (y_start==0) ? 1 : y_start;
-	const int h = (y_end==fpip->h) ? y_end-1 : y_end;
+	const int y_fin = (y_end==fpip->h) ? y_end-1 : y_end;
 
 	PIXEL_YC *dst, *src;
-	int* pmdp = &PMD[4500];
+	int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
+	
+	if (0 == y_start)
+		memcpy(fpip->ycp_temp, fpip->ycp_edit, w * sizeof(PIXEL_YC));
 
-	for (int y = ys; y < h; y++) {
+	for (int y = max(1, y_start); y < y_fin; y++) {
 		src = fpip->ycp_edit + y*max_w +1;
 		dst = fpip->ycp_temp + y*max_w +1;
-
+		
+		*(dst-1) = *(src-1);
 		for (int x = 2; x < w; x++) {
 			dst->y  = src->y  + (short)(
 					pmdp[(src-max_w)->y  - src->y ] +	//上
@@ -291,7 +309,10 @@ void Anisotropic_MT(int thread_id, int thread_num, void *param1, void *param2) {
 					);
 			dst++, src++;
 		}
+		*dst = *src;
 	}
+	if (y_end==fpip->h)
+		memcpy(fpip->ycp_temp + (fpip->h-1) * max_w, fpip->ycp_edit + (fpip->h-1) * max_w, w * sizeof(PIXEL_YC));
 }
 //---------------------------------------------------------------------
 //		事前計算関数
@@ -303,21 +324,21 @@ void make_table(int strength, int threshold, int useExp, int cPMD) {
 	double threshold2 = (cPMD) ? pow(2.0, threshold/10.0) : threshold*16/10.0*threshold*16/10.0;
 	double temp;
 
-	for (int x = -4500; x <= 4500; x++) {
+	for (int x = -PMD_TABLE_SIZE; x <= PMD_TABLE_SIZE; x++) {
 		if (cPMD) {
 			//修正PMD用
 			if (useExp)
-				PMD[x+4500] = int((1<<16)/range * (( exp( -x*x / threshold2 ) )*strength2));
+				PMD[x+PMD_TABLE_SIZE] = int((1<<16)/range * (( exp( -x*x / threshold2 ) )*strength2));
 			else
-				PMD[x+4500] = int((1<<16)/range * ((1.0/( 1.0 + ( x*x / threshold2 ) ))*strength2));
+				PMD[x+PMD_TABLE_SIZE] = int((1<<16)/range * ((1.0/( 1.0 + ( x*x / threshold2 ) ))*strength2));
 			//PMD用
 		} else {
 			if (useExp) {
 				temp = (exp( -x*x / threshold2 ) )*strength2 * x / range;
-				PMD[x+4500] = int((temp<0) ? temp-0.5 : temp+0.5);
+				PMD[x+PMD_TABLE_SIZE] = int((temp<0) ? temp-0.5 : temp+0.5);
 			} else {
 				temp = (1.0/( 1.0 + x*x / threshold2 ))*strength2 * x /range;
-				PMD[x+4500] = int((temp<0) ? temp-0.5 : temp+0.5);
+				PMD[x+PMD_TABLE_SIZE] = int((temp<0) ? temp-0.5 : temp+0.5);
 			}
 		}
 	}
@@ -325,6 +346,8 @@ void make_table(int strength, int threshold, int useExp, int cPMD) {
 //---------------------------------------------------------------------
 //		設定ウィンドウにウィンドウメッセージが来た時に呼ばれる関数
 //---------------------------------------------------------------------
+#pragma warning (push)
+#pragma warning (disable: 4100)
 BOOL func_WndProc( HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam,void *editp,FILTER *fp ) {
 	switch(message) {
 		//フィルタがアクティブでなければメモリを開放
@@ -352,53 +375,127 @@ BOOL func_update(FILTER *fp, int status) {
 	return TRUE;
 }
 //---------------------------------------------------------------------
+//		開始時に呼ばれる関数
+//---------------------------------------------------------------------
+BOOL func_init(FILTER *fp) {
+	func = get_pmd_func_list();
+#if CHECK_PERFORMANCE
+	QueryPerformanceFrequency((LARGE_INTEGER *)&pmd_qpc.freq);
+#endif
+	return TRUE;
+}
+#pragma warning (pop)
+//---------------------------------------------------------------------
 //		フィルタ処理関数
 //---------------------------------------------------------------------
 BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
+	get_qp_counter(&pmd_qpc.tmp[0]);
+
+	const int useCPMD = !!fp->check[1];
+	const int useExp = !!fp->check[0];
+	
 	//事前に計算した値を入れる領域を確保
 	//領域を確保できなければここで処理は止めてしまいます
 	if (!PMD) {
-		PMD = (int *)malloc((4500*2+1) * sizeof(int));
+		PMD = (int *)malloc((PMD_TABLE_SIZE*2+1) * sizeof(int));
 		if (!PMD) return TRUE;
-		make_table(fp->track[0], fp->track[1], fp->check[0], fp->check[1]);
+		make_table(fp->track[0], fp->track[1], useExp, useCPMD);
 	}
 
 	//ぼかした輝度を格納する領域
 	PIXEL_YC *gauss = NULL;
 	//修正PMD法ならばガウスぼかしをおこなう
-	if (fp->check[1]) {
-		gauss = (PIXEL_YC *)malloc(fpip->w * fpip->h * sizeof(PIXEL_YC));
+	if (useCPMD) {
+		gauss = (PIXEL_YC *)malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC));
 		if (NULL == gauss) return TRUE;
 
 		//横軸のガウスぼかし、続けて縦軸のガウスぼかしをマルチスレッドで呼び出す
 		//横軸の処理を完全に終えてから縦軸の処理をしなければならないので、メインの関数をマルチスレッドで呼び出してそこから縦軸横軸と分岐するのではなく、一つ一つマルチスレッドで呼び出します
+		get_qp_counter(&pmd_qpc.tmp[2]);
+		fp->exfunc->exec_multi_thread_func(func->gaussianH, (void *)fpip, fpip->ycp_temp);
+		get_qp_counter(&pmd_qpc.tmp[3]);
+		fp->exfunc->exec_multi_thread_func(func->gaussianV, (void *)fpip, (void *)gauss);
+		get_qp_counter(&pmd_qpc.tmp[4]);
+		add_qpctime(&pmd_qpc.value[1], pmd_qpc.tmp[3] - pmd_qpc.tmp[2]);
+		add_qpctime(&pmd_qpc.value[2], pmd_qpc.tmp[4] - pmd_qpc.tmp[3]);
+#if SIMD_DEBUG
+		PIXEL_YC *debug = (PIXEL_YC *)malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC));
+		fp->exfunc->exec_multi_thread_func(gaussianH, (void *)fpip, fpip->ycp_temp);
+		fp->exfunc->exec_multi_thread_func(gaussianV, (void *)fpip, (void *)debug);
 
-		fp->exfunc->exec_multi_thread_func(gaussianV, (void *)fpip, NULL);
-		fp->exfunc->exec_multi_thread_func(gaussianH, (void *)fpip, (void *)gauss);
-	}
-
-	for (int i = 0; i < fp->track[2]; i++) {
-		//メインの処理関数をマルチスレッドで呼び出します
-		if (fp->check[1])
-			fp->exfunc->exec_multi_thread_func(PMD_MT, (void *)fpip, (void *)gauss);
-		else
-			fp->exfunc->exec_multi_thread_func(Anisotropic_MT, (void *)fpip, NULL);
-
-		//四辺を処理していないのでコピー
-		memcpy(fpip->ycp_temp,                         fpip->ycp_edit,                         fpip->w*sizeof(PIXEL_YC));
-		memcpy(fpip->ycp_temp+(fpip->h-1)*fpip->max_w, fpip->ycp_edit+(fpip->h-1)*fpip->max_w, fpip->w*sizeof(PIXEL_YC));
-		for (int j = 0; j < fpip->h; j++) {
-			memcpy(fpip->ycp_temp+j*fpip->max_w,           fpip->ycp_edit+j*fpip->max_w,           sizeof(PIXEL_YC));
-			memcpy(fpip->ycp_temp+j*fpip->max_w+fpip->w-1, fpip->ycp_edit+j*fpip->max_w+fpip->w-1, sizeof(PIXEL_YC));
+		int error = 0;
+		for (int y = 0; y < fpip->h; y++) {
+			PIXEL_YC *d_ptr = debug + y * fpip->max_w;
+			PIXEL_YC *g_ptr = gauss + y * fpip->max_w;
+			for (int x = 0; x < fpip->w; x++, d_ptr++, g_ptr++) {
+				if (memcmp(d_ptr, g_ptr, sizeof(PIXEL_YC)))
+					error++;
+			}
 		}
+		if (error)
+			MessageBox(NULL, "Error at gaussian SIMD calc.", "PMD_MT", NULL);
 
+		free(debug);
+#endif
+	}
+	for (int i = 0; i < fp->track[2]; i++) {
+		PMD_MT_PRM prm;
+		prm.pmd = PMD;
+		prm.gauss = gauss;
+		prm.strength = fp->track[0];
+		prm.threshold = fp->track[1];
+		//メインの処理関数をマルチスレッドで呼び出します
+		get_qp_counter(&pmd_qpc.tmp[5]);
+		fp->exfunc->exec_multi_thread_func(func->main_func[useCPMD][useExp], (void *)fpip, (void *)&prm);
+		get_qp_counter(&pmd_qpc.tmp[6]);
+		add_qpctime(&pmd_qpc.value[3], pmd_qpc.tmp[6] - pmd_qpc.tmp[5]);
+#if SIMD_DEBUG
+		PIXEL_YC *debug = (PIXEL_YC *)malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC));
+		SWAP(PIXEL_YC *, fpip->ycp_temp, debug);
+		fp->exfunc->exec_multi_thread_func((useCPMD) ? pmd_mt : anisotropic_mt, (void *)fpip, (void *)&prm);
+		SWAP(PIXEL_YC *, fpip->ycp_temp, debug);
+
+		int error = 0;
+		int error_threshold = (useExp) ? 0 : 1<<3;
+		for (int y = 0; y < fpip->h; y++) {
+			PIXEL_YC *d_ptr = debug + y * fpip->max_w;
+			PIXEL_YC *g_ptr = fpip->ycp_temp + y * fpip->max_w;
+			for (int x = 0; x < fpip->w; x++, d_ptr++, g_ptr++) {
+				if (error_threshold < abs(d_ptr->y - g_ptr->y) + abs(d_ptr->cb - g_ptr->cb) + abs(d_ptr->cr - g_ptr->cr))
+					error++;
+			}
+		}
+		if (error) {
+			MessageBox(NULL, "Error at main calc", "PMD_MT", NULL);
+		}
+		
+		free(debug);
+#endif
 		//テンポラリ領域と入れ替えます
-		PIXEL_YC *swap = fpip->ycp_edit;
-		fpip->ycp_edit = fpip->ycp_temp;
-		fpip->ycp_temp = swap;
+		SWAP(PIXEL_YC *, fpip->ycp_edit, fpip->ycp_temp);
 	}
 
-	free(gauss);
+	if (gauss) {
+		free(gauss);
+	}
+	get_qp_counter(&pmd_qpc.tmp[1]);
+	add_qpctime(&pmd_qpc.value[0], pmd_qpc.tmp[1] - pmd_qpc.tmp[0]);
+#if CHECK_PERFORMANCE
+	pmd_qpc.frame_count++;
+	if ((pmd_qpc.frame_count & 1023) == 0) {
+		FILE *fp = NULL;
+		if (0 == fopen_s(&fp, "pmd_mt_performance.csv", "a")) {
+			fprintf(fp, "%d,%lf,%lf,%lf,%lf\n",
+				pmd_qpc.frame_count,
+				pmd_qpc.value[0] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count,
+				pmd_qpc.value[1] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count,
+				pmd_qpc.value[2] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count,
+				pmd_qpc.value[3] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count);
+
+			fclose(fp);
+		}
+	}
+#endif
 
 	return TRUE;
 }
