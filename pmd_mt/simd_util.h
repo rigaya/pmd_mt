@@ -15,6 +15,10 @@
 #pragma warning (disable: 4127) //warning C4127: 条件式が定数です
 template<bool dst_aligned>
 static void __forceinline memcpy_sse(uint8_t *dst, const uint8_t *src, int size) {
+	if (size < 64) {
+		memcpy(dst, src, size);
+		return;
+	}
 	uint8_t *dst_fin = dst + size;
 	uint8_t *dst_aligned_fin = (uint8_t *)(((size_t)(dst_fin + 15) & ~15) - 64);
 	__m128 x0, x1, x2, x3;
@@ -23,8 +27,8 @@ static void __forceinline memcpy_sse(uint8_t *dst, const uint8_t *src, int size)
 		if (start_align_diff) {
 			x0 = _mm_loadu_ps((float*)src);
 			_mm_storeu_ps((float*)dst, x0);
-			dst += start_align_diff;
-			src += start_align_diff;
+			dst += 16 - start_align_diff;
+			src += 16 - start_align_diff;
 		}
 	}
 	for ( ; dst < dst_aligned_fin; dst += 64, src += 64) {
@@ -193,6 +197,10 @@ static __forceinline __m256i cvthi256_epi16_epi32(__m256i y0) {
 #pragma warning (disable: 4127) //warning C4127: 条件式が定数です
 template<bool dst_aligned, bool use_stream, bool zeroupper>
 static void __forceinline memcpy_avx2(uint8_t *dst, const uint8_t *src, int size) {
+	if (size < 128) {
+		memcpy(dst, src, size);
+		return;
+	}
 	uint8_t *dst_fin = dst + size;
 	uint8_t *dst_aligned_fin = (uint8_t *)(((size_t)(dst_fin + 31) & ~31) - 128);
 	__m256i y0, y1, y2, y3;
@@ -201,8 +209,8 @@ static void __forceinline memcpy_avx2(uint8_t *dst, const uint8_t *src, int size
 		if (start_align_diff) {
 			y0 = _mm256_loadu_si256((__m256i*)src);
 			_mm256_storeu_si256((__m256i*)dst, y0);
-			dst += start_align_diff;
-			src += start_align_diff;
+			dst += 32 - start_align_diff;
+			src += 32 - start_align_diff;
 		}
 	}
 #define _mm256_stream_switch_si256(x, ymm) ((use_stream) ? _mm256_stream_si256((x), (ymm)) : _mm256_store_si256((x), (ymm)))
