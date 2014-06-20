@@ -188,6 +188,72 @@ static __forceinline void getDiff(uint8_t *src, int max_w, __m256i& xUpper, __m2
 	xRight = _mm256_subs_epi16(_mm256_alignr_epi8(ySrc1, ySrc0, 12), ySrc);
 }
 
+template <bool use_stream>
+static __forceinline void pmd_mt_avx2_line(uint8_t *dst, uint8_t *src, uint8_t *gau, int process_size_in_byte, int max_w, const __m256& yInvThreshold2, const __m256& yStrength2, const __m256& yOnef) {
+	uint8_t *src_fin = src + process_size_in_byte;
+	for (; src < src_fin; src += 32, dst += 32, gau += 32) {
+		__m256i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
+		__m256i yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff;
+		getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
+		getDiff(gau, max_w, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
+
+		__m256 yGUpperlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauUpperDiff));
+		__m256 yGUpperhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauUpperDiff));
+		__m256 yGLowerlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauLowerDiff));
+		__m256 yGLowerhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauLowerDiff));
+		__m256 yGLeftlo  = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauLeftDiff));
+		__m256 yGLefthi  = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauLeftDiff));
+		__m256 yGRightlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauRightDiff));
+		__m256 yGRighthi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauRightDiff));
+
+		yGUpperlo = _mm256_mul_ps(yGUpperlo, yGUpperlo);
+		yGUpperhi = _mm256_mul_ps(yGUpperhi, yGUpperhi);
+		yGLowerlo = _mm256_mul_ps(yGLowerlo, yGLowerlo);
+		yGLowerhi = _mm256_mul_ps(yGLowerhi, yGLowerhi);
+		yGLeftlo  = _mm256_mul_ps(yGLeftlo,  yGLeftlo);
+		yGLefthi  = _mm256_mul_ps(yGLefthi,  yGLefthi);
+		yGRightlo = _mm256_mul_ps(yGRightlo, yGRightlo);
+		yGRighthi = _mm256_mul_ps(yGRighthi, yGRighthi);
+
+		yGUpperlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGUpperlo, yInvThreshold2, yOnef));
+		yGUpperhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGUpperhi, yInvThreshold2, yOnef));
+		yGLowerlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLowerlo, yInvThreshold2, yOnef));
+		yGLowerhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLowerhi, yInvThreshold2, yOnef));
+		yGLeftlo  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLeftlo,  yInvThreshold2, yOnef));
+		yGLefthi  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLefthi,  yInvThreshold2, yOnef));
+		yGRightlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGRightlo, yInvThreshold2, yOnef));
+		yGRighthi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGRighthi, yInvThreshold2, yOnef));
+
+		yGUpperlo = _mm256_mul_ps(yStrength2, yGUpperlo);
+		yGUpperhi = _mm256_mul_ps(yStrength2, yGUpperhi);
+		yGLowerlo = _mm256_mul_ps(yStrength2, yGLowerlo);
+		yGLowerhi = _mm256_mul_ps(yStrength2, yGLowerhi);
+		yGLeftlo  = _mm256_mul_ps(yStrength2, yGLeftlo);
+		yGLefthi  = _mm256_mul_ps(yStrength2, yGLefthi);
+		yGRightlo = _mm256_mul_ps(yStrength2, yGRightlo);
+		yGRighthi = _mm256_mul_ps(yStrength2, yGRighthi);
+
+		__m256 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
+		yGUpperlo = _mm256_mul_ps(yGUpperlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcUpperDiff)));
+		yGUpperhi = _mm256_mul_ps(yGUpperhi, _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcUpperDiff)));
+		yGLeftlo  = _mm256_mul_ps(yGLeftlo,  _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLeftDiff)));
+		yGLefthi  = _mm256_mul_ps(yGLefthi,  _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLeftDiff)));
+
+		yAddLo0   = _mm256_fmadd_ps(yGLowerlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLowerDiff)), yGUpperlo);
+		yAddHi0   = _mm256_fmadd_ps(yGLowerhi, _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLowerDiff)), yGUpperhi);
+		yAddLo1   = _mm256_fmadd_ps(yGRightlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcRightDiff)), yGLeftlo);
+		yAddHi1   = _mm256_fmadd_ps(yGRighthi, _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcRightDiff)), yGLefthi);
+
+		yAddLo0 = _mm256_add_ps(yAddLo0, yAddLo1);
+		yAddHi0 = _mm256_add_ps(yAddHi0, yAddHi1);
+
+		__m256i ySrc = _mm256_loadu_si256((__m256i *)(src));
+#define _mm256_stream_switch_si256(x, ymm) ((use_stream) ? _mm256_stream_si256((x), (ymm)) : _mm256_storeu_si256((x), (ymm)))
+		_mm256_stream_switch_si256((__m256i *)(dst), _mm256_add_epi16(ySrc, _mm256_packs_epi32(_mm256_cvtps_epi32(yAddLo0), _mm256_cvtps_epi32(yAddHi0))));
+#undef _mm256_stream_switch_si256
+	}
+}
+
 void pmd_mt_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
 	PIXEL_YC *gauss	= ((PMD_MT_PRM *)param2)->gauss;
@@ -234,65 +300,18 @@ void pmd_mt_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 		//先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
 		//最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
 		//先端終端ピクセルは後から上書きコピーする
-		uint8_t *src_fin = src + w * sizeof(PIXEL_YC);
-		for ( ; src < src_fin; src += 32, dst += 32, gau += 32) {
-			__m256i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
-			__m256i yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff;
-			getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
-			getDiff(gau, max_w, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
-
-			__m256 yGUpperlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauUpperDiff));
-			__m256 yGUpperhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauUpperDiff));
-			__m256 yGLowerlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauLowerDiff));
-			__m256 yGLowerhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauLowerDiff));
-			__m256 yGLeftlo  = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauLeftDiff));
-			__m256 yGLefthi  = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauLeftDiff));
-			__m256 yGRightlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(yGauRightDiff));
-			__m256 yGRighthi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(yGauRightDiff));
-
-			yGUpperlo = _mm256_mul_ps(yGUpperlo, yGUpperlo);
-			yGUpperhi = _mm256_mul_ps(yGUpperhi, yGUpperhi);
-			yGLowerlo = _mm256_mul_ps(yGLowerlo, yGLowerlo);
-			yGLowerhi = _mm256_mul_ps(yGLowerhi, yGLowerhi);
-			yGLeftlo  = _mm256_mul_ps(yGLeftlo,  yGLeftlo);
-			yGLefthi  = _mm256_mul_ps(yGLefthi,  yGLefthi);
-			yGRightlo = _mm256_mul_ps(yGRightlo, yGRightlo);
-			yGRighthi = _mm256_mul_ps(yGRighthi, yGRighthi);
-
-			yGUpperlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGUpperlo, yInvThreshold2, yOnef));
-			yGUpperhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGUpperhi, yInvThreshold2, yOnef));
-			yGLowerlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLowerlo, yInvThreshold2, yOnef));
-			yGLowerhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLowerhi, yInvThreshold2, yOnef));
-			yGLeftlo  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLeftlo,  yInvThreshold2, yOnef));
-			yGLefthi  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLefthi,  yInvThreshold2, yOnef));
-			yGRightlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGRightlo, yInvThreshold2, yOnef));
-			yGRighthi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGRighthi, yInvThreshold2, yOnef));
-
-			yGUpperlo = _mm256_mul_ps(yStrength2, yGUpperlo);
-			yGUpperhi = _mm256_mul_ps(yStrength2, yGUpperhi);
-			yGLowerlo = _mm256_mul_ps(yStrength2, yGLowerlo);
-			yGLowerhi = _mm256_mul_ps(yStrength2, yGLowerhi);
-			yGLeftlo  = _mm256_mul_ps(yStrength2, yGLeftlo);
-			yGLefthi  = _mm256_mul_ps(yStrength2, yGLefthi);
-			yGRightlo = _mm256_mul_ps(yStrength2, yGRightlo);
-			yGRighthi = _mm256_mul_ps(yStrength2, yGRighthi);
-
-			__m256 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
-			yGUpperlo = _mm256_mul_ps(yGUpperlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcUpperDiff)));
-			yGUpperhi = _mm256_mul_ps(yGUpperhi, _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcUpperDiff)));
-			yGLeftlo  = _mm256_mul_ps(yGLeftlo,  _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLeftDiff)));
-			yGLefthi  = _mm256_mul_ps(yGLefthi,  _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLeftDiff)));
-
-			yAddLo0   = _mm256_fmadd_ps(yGLowerlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLowerDiff)), yGUpperlo);
-			yAddHi0   = _mm256_fmadd_ps(yGLowerhi, _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLowerDiff)), yGUpperhi);
-			yAddLo1   = _mm256_fmadd_ps(yGRightlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcRightDiff)), yGLeftlo);
-			yAddHi1   = _mm256_fmadd_ps(yGRighthi, _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcRightDiff)), yGLefthi);
-
-			yAddLo0 = _mm256_add_ps(yAddLo0, yAddLo1);
-			yAddHi0 = _mm256_add_ps(yAddHi0, yAddHi1);
-
-			__m256i ySrc = _mm256_loadu_si256((__m256i *)(src));
-			_mm256_storeu_si256((__m256i *)(dst), _mm256_add_epi16(ySrc, _mm256_packs_epi32(_mm256_cvtps_epi32(yAddLo0), _mm256_cvtps_epi32(yAddHi0))));
+		uint32_t process_size_in_byte = w * sizeof(PIXEL_YC);
+		const size_t dst_mod32 = (int)((size_t)dst & 0x1f);
+		if (dst_mod32) {
+			pmd_mt_avx2_line<false>(src, dst, gau, dst_mod32, max_w, yInvThreshold2, yStrength2, yOnef);
+			src += dst_mod32; dst += dst_mod32; gau += dst_mod32; process_size_in_byte -= dst_mod32;
+		}
+		pmd_mt_avx2_line<true>(src, dst, gau, process_size_in_byte & (~0x1f), max_w, yInvThreshold2, yStrength2, yOnef);
+		if (process_size_in_byte & 0x1f) {
+			src += process_size_in_byte - 32;
+			dst += process_size_in_byte - 32;
+			gau += process_size_in_byte - 32;
+			pmd_mt_avx2_line<false>(src, dst, gau, 32, max_w, yInvThreshold2, yStrength2, yOnef);
 		}
 		//先端と終端のピクセルをそのままコピー
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
@@ -422,6 +441,65 @@ void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2) 
 	_mm256_zeroupper();
 }
 
+template <bool use_stream>
+static __forceinline void anisotropic_mt_avx2_line(uint8_t *dst, uint8_t *src, int process_size_in_byte, int max_w, const __m256& yInvThreshold2, const __m256& yStrength2, const __m256& yOnef) {
+	uint8_t *src_fin = src + process_size_in_byte;
+	for ( ; src < src_fin; src += 32, dst += 32) {
+		__m256i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
+		getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
+
+		__m256 xSUpperlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcUpperDiff));
+		__m256 xSUpperhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcUpperDiff));
+		__m256 xSLowerlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLowerDiff));
+		__m256 xSLowerhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLowerDiff));
+		__m256 xSLeftlo  = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLeftDiff));
+		__m256 xSLefthi  = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLeftDiff));
+		__m256 xSRightlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcRightDiff));
+		__m256 xSRighthi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcRightDiff));
+
+		__m256 yTUpperlo = _mm256_mul_ps(xSUpperlo, xSUpperlo);
+		__m256 yTUpperhi = _mm256_mul_ps(xSUpperhi, xSUpperhi);
+		__m256 yTLowerlo = _mm256_mul_ps(xSLowerlo, xSLowerlo);
+		__m256 yTLowerhi = _mm256_mul_ps(xSLowerhi, xSLowerhi);
+		__m256 yTLeftlo  = _mm256_mul_ps(xSLeftlo,  xSLeftlo);
+		__m256 yTLefthi  = _mm256_mul_ps(xSLefthi,  xSLefthi);
+		__m256 yTRightlo = _mm256_mul_ps(xSRightlo, xSRightlo);
+		__m256 yTRighthi = _mm256_mul_ps(xSRighthi, xSRighthi);
+
+		yTUpperlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTUpperlo, yInvThreshold2, yOnef));
+		yTUpperhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTUpperhi, yInvThreshold2, yOnef));
+		yTLowerlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLowerlo, yInvThreshold2, yOnef));
+		yTLowerhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLowerhi, yInvThreshold2, yOnef));
+		yTLeftlo  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLeftlo,  yInvThreshold2, yOnef));
+		yTLefthi  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLefthi,  yInvThreshold2, yOnef));
+		yTRightlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTRightlo, yInvThreshold2, yOnef));
+		yTRighthi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTRighthi, yInvThreshold2, yOnef));
+
+		yTUpperlo = _mm256_mul_ps(yStrength2, yTUpperlo);
+		yTUpperhi = _mm256_mul_ps(yStrength2, yTUpperhi);
+		yTLowerlo = _mm256_mul_ps(yStrength2, yTLowerlo);
+		yTLowerhi = _mm256_mul_ps(yStrength2, yTLowerhi);
+		yTLeftlo  = _mm256_mul_ps(yStrength2, yTLeftlo);
+		yTLefthi  = _mm256_mul_ps(yStrength2, yTLefthi);
+		yTRightlo = _mm256_mul_ps(yStrength2, yTRightlo);
+		yTRighthi = _mm256_mul_ps(yStrength2, yTRighthi);
+
+		__m256 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
+		yAddLo0   = _mm256_fmadd_ps(xSLowerlo, yTLowerlo, _mm256_mul_ps(xSUpperlo, yTUpperlo));
+		yAddHi0   = _mm256_fmadd_ps(xSLowerhi, yTLowerhi, _mm256_mul_ps(xSUpperhi, yTUpperhi));
+		yAddLo1   = _mm256_fmadd_ps(xSRightlo, yTRightlo, _mm256_mul_ps(xSLeftlo, yTLeftlo));
+		yAddHi1   = _mm256_fmadd_ps(xSRighthi, yTRighthi, _mm256_mul_ps(xSLefthi, yTLefthi));
+
+		yAddLo0 = _mm256_add_ps(yAddLo0, yAddLo1);
+		yAddHi0 = _mm256_add_ps(yAddHi0, yAddHi1);
+
+		__m256i ySrc = _mm256_loadu_si256((__m256i *)(src));
+#define _mm256_stream_storeu_switch_si256(x, ymm) ((use_stream) ? _mm256_stream_si256((x), (ymm)) : _mm256_storeu_si256((x), (ymm)))
+		_mm256_stream_storeu_switch_si256((__m256i *)(dst), _mm256_add_epi16(ySrc, _mm256_packs_epi32(_mm256_cvtps_epi32(yAddLo0), _mm256_cvtps_epi32(yAddHi0))));
+#undef _mm256_stream_storeu_switch_si256
+	}
+}
+
 void anisotropic_mt_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
 	const int w = fpip->w;
@@ -464,58 +542,17 @@ void anisotropic_mt_avx2(int thread_id, int thread_num, void *param1, void *para
 		//先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
 		//最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
 		//先端終端ピクセルは後から上書きコピーする
-		uint8_t *src_fin = src + w * sizeof(PIXEL_YC);
-		for ( ; src < src_fin; src += 32, dst += 32) {
-			__m256i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
-			getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
-
-			__m256 xSUpperlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcUpperDiff));
-			__m256 xSUpperhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcUpperDiff));
-			__m256 xSLowerlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLowerDiff));
-			__m256 xSLowerhi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLowerDiff));
-			__m256 xSLeftlo  = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcLeftDiff));
-			__m256 xSLefthi  = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcLeftDiff));
-			__m256 xSRightlo = _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcRightDiff));
-			__m256 xSRighthi = _mm256_cvtepi32_ps(cvthi256_epi16_epi32(ySrcRightDiff));
-
-			__m256 yTUpperlo = _mm256_mul_ps(xSUpperlo, xSUpperlo);
-			__m256 yTUpperhi = _mm256_mul_ps(xSUpperhi, xSUpperhi);
-			__m256 yTLowerlo = _mm256_mul_ps(xSLowerlo, xSLowerlo);
-			__m256 yTLowerhi = _mm256_mul_ps(xSLowerhi, xSLowerhi);
-			__m256 yTLeftlo  = _mm256_mul_ps(xSLeftlo,  xSLeftlo);
-			__m256 yTLefthi  = _mm256_mul_ps(xSLefthi,  xSLefthi);
-			__m256 yTRightlo = _mm256_mul_ps(xSRightlo, xSRightlo);
-			__m256 yTRighthi = _mm256_mul_ps(xSRighthi, xSRighthi);
-
-			yTUpperlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTUpperlo, yInvThreshold2, yOnef));
-			yTUpperhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTUpperhi, yInvThreshold2, yOnef));
-			yTLowerlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLowerlo, yInvThreshold2, yOnef));
-			yTLowerhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLowerhi, yInvThreshold2, yOnef));
-			yTLeftlo  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLeftlo,  yInvThreshold2, yOnef));
-			yTLefthi  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLefthi,  yInvThreshold2, yOnef));
-			yTRightlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTRightlo, yInvThreshold2, yOnef));
-			yTRighthi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTRighthi, yInvThreshold2, yOnef));
-
-			yTUpperlo = _mm256_mul_ps(yStrength2, yTUpperlo);
-			yTUpperhi = _mm256_mul_ps(yStrength2, yTUpperhi);
-			yTLowerlo = _mm256_mul_ps(yStrength2, yTLowerlo);
-			yTLowerhi = _mm256_mul_ps(yStrength2, yTLowerhi);
-			yTLeftlo  = _mm256_mul_ps(yStrength2, yTLeftlo);
-			yTLefthi  = _mm256_mul_ps(yStrength2, yTLefthi);
-			yTRightlo = _mm256_mul_ps(yStrength2, yTRightlo);
-			yTRighthi = _mm256_mul_ps(yStrength2, yTRighthi);
-
-			__m256 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
-			yAddLo0   = _mm256_fmadd_ps(xSLowerlo, yTLowerlo, _mm256_mul_ps(xSUpperlo, yTUpperlo));
-			yAddHi0   = _mm256_fmadd_ps(xSLowerhi, yTLowerhi, _mm256_mul_ps(xSUpperhi, yTUpperhi));
-			yAddLo1   = _mm256_fmadd_ps(xSRightlo, yTRightlo, _mm256_mul_ps(xSLeftlo, yTLeftlo));
-			yAddHi1   = _mm256_fmadd_ps(xSRighthi, yTRighthi, _mm256_mul_ps(xSLefthi, yTLefthi));
-
-			yAddLo0 = _mm256_add_ps(yAddLo0, yAddLo1);
-			yAddHi0 = _mm256_add_ps(yAddHi0, yAddHi1);
-
-			__m256i ySrc = _mm256_loadu_si256((__m256i *)(src));
-			_mm256_storeu_si256((__m256i *)(dst), _mm256_add_epi16(ySrc, _mm256_packs_epi32(_mm256_cvtps_epi32(yAddLo0), _mm256_cvtps_epi32(yAddHi0))));
+		uint32_t process_size_in_byte = w * sizeof(PIXEL_YC);
+		const size_t dst_mod32 = (int)((size_t)dst & 0x1f);
+		if (dst_mod32) {
+			anisotropic_mt_avx2_line<false>(src, dst, dst_mod32, max_w, yInvThreshold2, yStrength2, yOnef);
+			src += dst_mod32; dst += dst_mod32; process_size_in_byte -= dst_mod32;
+		}
+		anisotropic_mt_avx2_line<true>(src, dst, process_size_in_byte & (~0x1f), max_w, yInvThreshold2, yStrength2, yOnef);
+		if (process_size_in_byte & 0x1f) {
+			src += process_size_in_byte - 32;
+			dst += process_size_in_byte - 32;
+			anisotropic_mt_avx2_line<false>(src, dst, 32, max_w, yInvThreshold2, yStrength2, yOnef);
 		}
 		//先端と終端をそのままコピー
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
