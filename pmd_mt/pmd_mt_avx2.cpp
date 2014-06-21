@@ -300,18 +300,19 @@ void pmd_mt_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 		//先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
 		//最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
 		//先端終端ピクセルは後から上書きコピーする
-		uint32_t process_size_in_byte = w * sizeof(PIXEL_YC);
+		size_t process_size_in_byte = w * sizeof(PIXEL_YC);
 		const size_t dst_mod32 = (int)((size_t)dst & 0x1f);
 		if (dst_mod32) {
-			pmd_mt_avx2_line<false>(src, dst, gau, dst_mod32, max_w, yInvThreshold2, yStrength2, yOnef);
-			src += dst_mod32; dst += dst_mod32; gau += dst_mod32; process_size_in_byte -= dst_mod32;
+			int dw = 32 - dst_mod32;
+			pmd_mt_avx2_line<false>(dst, src, gau, dw, max_w, yInvThreshold2, yStrength2, yOnef);
+			src += dw; dst += dw; gau += dw; process_size_in_byte -= dw;
 		}
-		pmd_mt_avx2_line<true>(src, dst, gau, process_size_in_byte & (~0x1f), max_w, yInvThreshold2, yStrength2, yOnef);
+		pmd_mt_avx2_line<true>(dst, src, gau, process_size_in_byte & (~0x1f), max_w, yInvThreshold2, yStrength2, yOnef);
 		if (process_size_in_byte & 0x1f) {
 			src += process_size_in_byte - 32;
 			dst += process_size_in_byte - 32;
 			gau += process_size_in_byte - 32;
-			pmd_mt_avx2_line<false>(src, dst, gau, 32, max_w, yInvThreshold2, yStrength2, yOnef);
+			pmd_mt_avx2_line<false>(dst, src, gau, 32, max_w, yInvThreshold2, yStrength2, yOnef);
 		}
 		//先端と終端のピクセルをそのままコピー
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
@@ -545,14 +546,15 @@ void anisotropic_mt_avx2(int thread_id, int thread_num, void *param1, void *para
 		uint32_t process_size_in_byte = w * sizeof(PIXEL_YC);
 		const size_t dst_mod32 = (int)((size_t)dst & 0x1f);
 		if (dst_mod32) {
-			anisotropic_mt_avx2_line<false>(src, dst, dst_mod32, max_w, yInvThreshold2, yStrength2, yOnef);
-			src += dst_mod32; dst += dst_mod32; process_size_in_byte -= dst_mod32;
+			int dw = 32 - dst_mod32;
+			anisotropic_mt_avx2_line<false>(dst, src, dw, max_w, yInvThreshold2, yStrength2, yOnef);
+			src += dw; dst += dw; process_size_in_byte -= dw;
 		}
-		anisotropic_mt_avx2_line<true>(src, dst, process_size_in_byte & (~0x1f), max_w, yInvThreshold2, yStrength2, yOnef);
+		anisotropic_mt_avx2_line<true>(dst, src, process_size_in_byte & (~0x1f), max_w, yInvThreshold2, yStrength2, yOnef);
 		if (process_size_in_byte & 0x1f) {
 			src += process_size_in_byte - 32;
 			dst += process_size_in_byte - 32;
-			anisotropic_mt_avx2_line<false>(src, dst, 32, max_w, yInvThreshold2, yStrength2, yOnef);
+			anisotropic_mt_avx2_line<false>(dst, src, 32, max_w, yInvThreshold2, yStrength2, yOnef);
 		}
 		//先端と終端をそのままコピー
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
