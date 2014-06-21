@@ -25,6 +25,23 @@ static __forceinline __m128i gaussian_1_4_6_4_1(__m128i x0, __m128i x1, __m128i 
 	return _mm_packs_epi32(x0_lower, x0_upper);
 }
 
+static __forceinline void set_temp_buffer(int i_dst, int i_src, uint8_t *src_top, uint8_t *temp, int analyze_block, int max_w, int tmp_line_size) {
+	uint8_t *src_ptr = src_top + i_src * max_w * sizeof(PIXEL_YC);
+	uint8_t *tmp_ptr = temp + i_dst * tmp_line_size;
+	uint8_t *temp_fin = tmp_ptr + analyze_block * sizeof(PIXEL_YC);
+	__m128i x0, x1, x2, x3;
+	for (; tmp_ptr < temp_fin; tmp_ptr += 64, src_ptr += 64) {
+		x0 = _mm_loadu_si128((const __m128i*)(src_ptr +  0));
+		x1 = _mm_loadu_si128((const __m128i*)(src_ptr + 16));
+		x2 = _mm_loadu_si128((const __m128i*)(src_ptr + 32));
+		x3 = _mm_loadu_si128((const __m128i*)(src_ptr + 48));
+		_mm_store_si128((__m128i*)(tmp_ptr +  0), x0);
+		_mm_store_si128((__m128i*)(tmp_ptr + 16), x1);
+		_mm_store_si128((__m128i*)(tmp_ptr + 32), x2);
+		_mm_store_si128((__m128i*)(tmp_ptr + 48), x3);
+	}
+}
+
 static __forceinline void gaussianH_simd(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
 	const int max_w = fpip->max_w;
@@ -45,10 +62,10 @@ static __forceinline void gaussianH_simd(int thread_id, int thread_num, void *pa
 	for (int pos_x = x_start; pos_x < x_fin; pos_x += analyze_block, src_top += analyze_block * sizeof(PIXEL_YC), buf_top += analyze_block * sizeof(PIXEL_YC)) {
 		analyze_block = min(x_fin - pos_x, max_block_size);
 		//一時領域にデータを満たす
-		memcpy_sse<true>(temp + 0*tmp_line_size, src_top + 0 * max_w * sizeof(PIXEL_YC), analyze_block * sizeof(PIXEL_YC));
-		memcpy_sse<true>(temp + 1*tmp_line_size, src_top + 0 * max_w * sizeof(PIXEL_YC), analyze_block * sizeof(PIXEL_YC));
-		memcpy_sse<true>(temp + 2*tmp_line_size, src_top + 0 * max_w * sizeof(PIXEL_YC), analyze_block * sizeof(PIXEL_YC));
-		memcpy_sse<true>(temp + 3*tmp_line_size, src_top + 1 * max_w * sizeof(PIXEL_YC), analyze_block * sizeof(PIXEL_YC));
+		set_temp_buffer(0, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
+		set_temp_buffer(1, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
+		set_temp_buffer(2, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
+		set_temp_buffer(3, 1, src_top, temp, analyze_block, max_w, tmp_line_size);
 
 		uint8_t *buf_line = buf_top;
 		for (int y = 0; y < h; y++, buf_line += max_w * sizeof(PIXEL_YC)) {
