@@ -405,16 +405,28 @@ void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2) 
 			__m256i yERightlo = _mm256_i32gather_epi32(pmdp, cvtlo256_epi16_epi32(yGauRightDiff), 4);
 			__m256i yERighthi = _mm256_i32gather_epi32(pmdp, cvthi256_epi16_epi32(yGauRightDiff), 4);
 #else
-			_mm256_store_si256((__m256i *)(diffBuf +  0), ySrcUpperDiff);
-			_mm256_store_si256((__m256i *)(diffBuf + 16), ySrcLowerDiff);
-			_mm256_store_si256((__m256i *)(diffBuf + 32), ySrcLeftDiff);
-			_mm256_store_si256((__m256i *)(diffBuf + 48), ySrcRightDiff);
+			_mm256_store_si256((__m256i *)(diffBuf +  0), yGauUpperDiff);
+			_mm256_store_si256((__m256i *)(diffBuf + 16), yGauLowerDiff);
+			_mm256_store_si256((__m256i *)(diffBuf + 32), yGauLeftDiff);
+			_mm256_store_si256((__m256i *)(diffBuf + 48), yGauRightDiff);
 
-			for (int i = 0; i < _countof(expBuf); i += 4) {
-				expBuf[i+0] = pmdp[diffBuf[i+0]];
-				expBuf[i+1] = pmdp[diffBuf[i+1]];
-				expBuf[i+2] = pmdp[diffBuf[i+2]];
-				expBuf[i+3] = pmdp[diffBuf[i+3]];
+			for (int i = 0; i < _countof(expBuf); i += 16) {
+				expBuf[i+ 0] = pmdp[diffBuf[i+ 0]];
+				expBuf[i+ 1] = pmdp[diffBuf[i+ 1]];
+				expBuf[i+ 2] = pmdp[diffBuf[i+ 2]];
+				expBuf[i+ 3] = pmdp[diffBuf[i+ 3]];
+				expBuf[i+ 4] = pmdp[diffBuf[i+ 8]];
+				expBuf[i+ 5] = pmdp[diffBuf[i+ 9]];
+				expBuf[i+ 6] = pmdp[diffBuf[i+10]];
+				expBuf[i+ 7] = pmdp[diffBuf[i+11]];
+				expBuf[i+ 8] = pmdp[diffBuf[i+ 4]];
+				expBuf[i+ 9] = pmdp[diffBuf[i+ 5]];
+				expBuf[i+10] = pmdp[diffBuf[i+ 6]];
+				expBuf[i+11] = pmdp[diffBuf[i+ 7]];
+				expBuf[i+12] = pmdp[diffBuf[i+12]];
+				expBuf[i+13] = pmdp[diffBuf[i+13]];
+				expBuf[i+14] = pmdp[diffBuf[i+14]];
+				expBuf[i+15] = pmdp[diffBuf[i+15]];
 			}
 
 			__m256i yEUpperlo = _mm256_load_si256((__m256i *)(expBuf +  0));
@@ -648,11 +660,23 @@ void anisotropic_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *
 			_mm256_store_si256((__m256i *)(diffBuf + 32), ySrcLeftDiff);
 			_mm256_store_si256((__m256i *)(diffBuf + 48), ySrcRightDiff);
 
-			for (int i = 0; i < 32; i += 4) {
-				expBuf[i+0] = pmdp[diffBuf[i+0]];
-				expBuf[i+1] = pmdp[diffBuf[i+1]];
-				expBuf[i+2] = pmdp[diffBuf[i+2]];
-				expBuf[i+3] = pmdp[diffBuf[i+3]];
+			for (int i = 0; i < _countof(expBuf); i += 16) {
+				expBuf[i+ 0] = pmdp[diffBuf[i+ 0]];
+				expBuf[i+ 1] = pmdp[diffBuf[i+ 1]];
+				expBuf[i+ 2] = pmdp[diffBuf[i+ 2]];
+				expBuf[i+ 3] = pmdp[diffBuf[i+ 3]];
+				expBuf[i+ 4] = pmdp[diffBuf[i+ 8]];
+				expBuf[i+ 5] = pmdp[diffBuf[i+ 9]];
+				expBuf[i+ 6] = pmdp[diffBuf[i+10]];
+				expBuf[i+ 7] = pmdp[diffBuf[i+11]];
+				expBuf[i+ 8] = pmdp[diffBuf[i+ 4]];
+				expBuf[i+ 9] = pmdp[diffBuf[i+ 5]];
+				expBuf[i+10] = pmdp[diffBuf[i+ 6]];
+				expBuf[i+11] = pmdp[diffBuf[i+ 7]];
+				expBuf[i+12] = pmdp[diffBuf[i+12]];
+				expBuf[i+13] = pmdp[diffBuf[i+13]];
+				expBuf[i+14] = pmdp[diffBuf[i+14]];
+				expBuf[i+15] = pmdp[diffBuf[i+15]];
 			}
 
 			__m256i yEUpperlo = _mm256_load_si256((__m256i *)(expBuf +  0));
