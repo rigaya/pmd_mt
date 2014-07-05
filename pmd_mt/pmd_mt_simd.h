@@ -286,13 +286,8 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 			__m256 ySLeft  = _mm256_set_m128(_mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLeftDiff)),  _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLeftDiff)));
 			__m256 ySRight = _mm256_set_m128(_mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcRightDiff)), _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcRightDiff)));
 
-			yGUpper = _mm256_mul_ps(yGUpper, ySUpper);
-			yGLower = _mm256_mul_ps(yGLower, ySLower);
-			yGLeft  = _mm256_mul_ps(yGLeft,  ySLeft);
-			yGRight = _mm256_mul_ps(yGRight, ySRight);
-
-			yGUpper = _mm256_add_ps(yGUpper, yGLower);
-			yGLeft  = _mm256_add_ps(yGLeft, yGRight);
+			yGUpper = _mm256_madd_ps(yGUpper, ySUpper, _mm256_mul_ps(yGLower, ySLower));
+			yGLeft  = _mm256_madd_ps(yGLeft,  ySLeft,  _mm256_mul_ps(yGRight, ySRight));
 			yGUpper = _mm256_add_ps(yGUpper, yGLeft);
 			
 			__m128 xAddHi = _mm256_extractf128_ps(yGUpper, 1);
@@ -547,13 +542,8 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 			yTLeft  = _mm256_mul_ps(yStrength2, yTLeft);
 			yTRight = _mm256_mul_ps(yStrength2, yTRight);
 
-			yTUpper = _mm256_mul_ps(ySUpper, yTUpper);
-			yTLower = _mm256_mul_ps(ySLower, yTLower);
-			yTLeft  = _mm256_mul_ps(ySLeft,  yTLeft);
-			yTRight = _mm256_mul_ps(ySRight, yTRight);
-
-			yTUpper = _mm256_add_ps(yTUpper, yTLower);
-			yTLeft  = _mm256_add_ps(yTLeft,  yTRight);
+			yTUpper = _mm256_madd_ps(ySUpper, yTUpper, _mm256_mul_ps(ySLower, yTLower));
+			yTLeft  = _mm256_madd_ps(ySLeft,  yTLeft,  _mm256_mul_ps(ySRight, yTRight));
 			yTUpper = _mm256_add_ps(yTUpper, yTLeft);
 			
 			__m128 xAddHi = _mm256_extractf128_ps(yTUpper, 1);

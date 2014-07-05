@@ -148,6 +148,16 @@ static __forceinline __m128 _mm_rcp_ps_hp(__m128 x0) {
 }
 
 #if USE_AVX
+static __forceinline __m256 _mm256_madd_ps(__m256 y0, __m256 y1, __m256 y2) {
+#if USE_FMA3
+	return _mm256_fmadd_ps(y0, y1, y2);
+#else
+	return _mm256_add_ps(_mm256_mul_ps(y0, y1), y2);
+#endif
+}
+#endif
+
+#if USE_AVX
 static __forceinline __m256 _mm256_rcp_ps_hp(__m256 y0) {
 	__m256 y1, y2;
 	y1 = _mm256_rcp_ps(y0);

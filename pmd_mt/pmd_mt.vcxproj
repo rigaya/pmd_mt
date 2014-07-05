@@ -102,6 +102,9 @@
     <ClCompile Include="pmd_mt_avx2.cpp">
       <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
+    <ClCompile Include="pmd_mt_avx_fma3.cpp">
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">AdvancedVectorExtensions</EnableEnhancedInstructionSet>
+    </ClCompile>
     <ClCompile Include="pmd_mt_simd.cpp" />
     <ClCompile Include="pmd_mt_sse2.cpp">
       <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">StreamingSIMDExtensions2</EnableEnhancedInstructionSet>

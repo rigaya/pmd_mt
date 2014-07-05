@@ -271,7 +271,7 @@ static __forceinline void pmd_mt_avx2_line(uint8_t *dst, uint8_t *src, uint8_t *
 	}
 }
 
-void pmd_mt_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+void pmd_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
 	PIXEL_YC *gauss	= ((PMD_MT_PRM *)param2)->gauss;
 	const int w = fpip->w;
@@ -530,7 +530,7 @@ static __forceinline void anisotropic_mt_avx2_line(uint8_t *dst, uint8_t *src, i
 	}
 }
 
-void anisotropic_mt_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+void anisotropic_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2) {
 	FILTER_PROC_INFO *fpip	= (FILTER_PROC_INFO *)param1;
 	const int w = fpip->w;
 	const int h = fpip->h;
