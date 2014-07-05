@@ -602,6 +602,9 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
 		*(PIXEL_YC *)(dst_line + (w-1) * sizeof(PIXEL_YC)) = *(PIXEL_YC *)(src_line + (w-1) * sizeof(PIXEL_YC));
 	}
+#if USE_AVX
+	_mm256_zeroupper();
+#endif
 	//最後の行はそのままコピー
 	if (h-1 == y_fin) {
 		memcpy_sse<false>((uint8_t *)dst_line, (uint8_t *)src_line, w * sizeof(PIXEL_YC));
