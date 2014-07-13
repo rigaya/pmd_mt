@@ -270,11 +270,11 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 			yGLower = _mm256_mul_ps(yGLower, yGLower);
 			yGLeft  = _mm256_mul_ps(yGLeft,  yGLeft);
 			yGRight = _mm256_mul_ps(yGRight, yGRight);
-
-			yGUpper = _mm256_rcp_ps_hp(_mm256_add_ps(yOnef, _mm256_mul_ps(yGUpper, yInvThreshold2)));
-			yGLower = _mm256_rcp_ps_hp(_mm256_add_ps(yOnef, _mm256_mul_ps(yGLower, yInvThreshold2)));
-			yGLeft  = _mm256_rcp_ps_hp(_mm256_add_ps(yOnef, _mm256_mul_ps(yGLeft,  yInvThreshold2)));
-			yGRight = _mm256_rcp_ps_hp(_mm256_add_ps(yOnef, _mm256_mul_ps(yGRight, yInvThreshold2)));
+			
+			yGUpper = _mm256_rcp_ps_hp(_mm256_madd_ps(yGUpper, yInvThreshold2, yOnef));
+			yGLower = _mm256_rcp_ps_hp(_mm256_madd_ps(yGLower, yInvThreshold2, yOnef));
+			yGLeft  = _mm256_rcp_ps_hp(_mm256_madd_ps(yGLeft,  yInvThreshold2, yOnef));
+			yGRight = _mm256_rcp_ps_hp(_mm256_madd_ps(yGRight, yInvThreshold2, yOnef));
 
 			yGUpper = _mm256_mul_ps(yStrength2, yGUpper);
 			yGLower = _mm256_mul_ps(yStrength2, yGLower);
@@ -290,8 +290,8 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 			yGLeft  = _mm256_madd_ps(yGLeft,  ySLeft,  _mm256_mul_ps(yGRight, ySRight));
 			yGUpper = _mm256_add_ps(yGUpper, yGLeft);
 			
-			__m128 xAddHi = _mm256_extractf128_ps(yGUpper, 1);
-			__m128 xAddLo = _mm256_castps256_ps128(yGUpper);
+			__m128 xAddHi0 = _mm256_extractf128_ps(yGUpper, 1);
+			__m128 xAddLo0 = _mm256_castps256_ps128(yGUpper);
 #else
 			xGUpperlo = _mm_mul_ps(xGUpperlo, xGUpperlo);
 			xGUpperhi = _mm_mul_ps(xGUpperhi, xGUpperhi);
@@ -302,14 +302,14 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 			xGRightlo = _mm_mul_ps(xGRightlo, xGRightlo);
 			xGRighthi = _mm_mul_ps(xGRighthi, xGRighthi);
 
-			xGUpperlo = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGUpperlo, xInvThreshold2)));
-			xGUpperhi = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGUpperhi, xInvThreshold2)));
-			xGLowerlo = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGLowerlo, xInvThreshold2)));
-			xGLowerhi = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGLowerhi, xInvThreshold2)));
-			xGLeftlo  = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGLeftlo,  xInvThreshold2)));
-			xGLefthi  = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGLefthi,  xInvThreshold2)));
-			xGRightlo = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGRightlo, xInvThreshold2)));
-			xGRighthi = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xGRighthi, xInvThreshold2)));
+			xGUpperlo = _mm_rcp_ps_hp(_mm_madd_ps(xGUpperlo, xInvThreshold2, xOnef));
+			xGUpperhi = _mm_rcp_ps_hp(_mm_madd_ps(xGUpperhi, xInvThreshold2, xOnef));
+			xGLowerlo = _mm_rcp_ps_hp(_mm_madd_ps(xGLowerlo, xInvThreshold2, xOnef));
+			xGLowerhi = _mm_rcp_ps_hp(_mm_madd_ps(xGLowerhi, xInvThreshold2, xOnef));
+			xGLeftlo  = _mm_rcp_ps_hp(_mm_madd_ps(xGLeftlo,  xInvThreshold2, xOnef));
+			xGLefthi  = _mm_rcp_ps_hp(_mm_madd_ps(xGLefthi,  xInvThreshold2, xOnef));
+			xGRightlo = _mm_rcp_ps_hp(_mm_madd_ps(xGRightlo, xInvThreshold2, xOnef));
+			xGRighthi = _mm_rcp_ps_hp(_mm_madd_ps(xGRighthi, xInvThreshold2, xOnef));
 
 			xGUpperlo = _mm_mul_ps(xStrength2, xGUpperlo);
 			xGUpperhi = _mm_mul_ps(xStrength2, xGUpperhi);
@@ -322,25 +322,20 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 
 			xGUpperlo = _mm_mul_ps(xGUpperlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcUpperDiff)));
 			xGUpperhi = _mm_mul_ps(xGUpperhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcUpperDiff)));
-			xGLowerlo = _mm_mul_ps(xGLowerlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLowerDiff)));
-			xGLowerhi = _mm_mul_ps(xGLowerhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLowerDiff)));
 			xGLeftlo  = _mm_mul_ps(xGLeftlo,  _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLeftDiff)));
 			xGLefthi  = _mm_mul_ps(xGLefthi,  _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLeftDiff)));
-			xGRightlo = _mm_mul_ps(xGRightlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcRightDiff)));
-			xGRighthi = _mm_mul_ps(xGRighthi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcRightDiff)));
+			
+			__m128 xAddLo0, xAddLo1, xAddHi0, xAddHi1;
+			xAddLo0 = _mm_madd_ps(xGLowerlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLowerDiff)), xGUpperlo);
+			xAddHi0 = _mm_madd_ps(xGLowerhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLowerDiff)), xGUpperhi);
+			xAddLo1 = _mm_madd_ps(xGRightlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcRightDiff)), xGLeftlo);
+			xAddHi1 = _mm_madd_ps(xGRighthi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcRightDiff)), xGLefthi);
 
-			__m128 xAddLo, xAddHi;
-			xAddLo = xGUpperlo;
-			xAddHi = xGUpperhi;
-			xAddLo = _mm_add_ps(xAddLo, xGLowerlo);
-			xAddHi = _mm_add_ps(xAddHi, xGLowerhi);
-			xGLeftlo = _mm_add_ps(xGLeftlo, xGRightlo);
-			xGLefthi = _mm_add_ps(xGLefthi, xGRighthi);
-			xAddLo = _mm_add_ps(xAddLo, xGLeftlo);
-			xAddHi = _mm_add_ps(xAddHi, xGLefthi);
+			xAddLo0 = _mm_add_ps(xAddLo0, xAddLo1);
+			xAddHi0 = _mm_add_ps(xAddHi0, xAddHi1);
 #endif
 			__m128i xSrc = _mm_loadu_si128((__m128i *)(src));
-			_mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_cvtps_epi32(xAddLo), _mm_cvtps_epi32(xAddHi))));
+			_mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_cvtps_epi32(xAddLo0), _mm_cvtps_epi32(xAddHi0))));
 		}
 		//先端と終端のピクセルをそのままコピー
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
@@ -546,8 +541,8 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 			yTLeft  = _mm256_madd_ps(ySLeft,  yTLeft,  _mm256_mul_ps(ySRight, yTRight));
 			yTUpper = _mm256_add_ps(yTUpper, yTLeft);
 			
-			__m128 xAddHi = _mm256_extractf128_ps(yTUpper, 1);
-			__m128 xAddLo = _mm256_castps256_ps128(yTUpper);
+			__m128 xAddHi0 = _mm256_extractf128_ps(yTUpper, 1);
+			__m128 xAddLo0 = _mm256_castps256_ps128(yTUpper);
 #else
 			__m128 xTUpperlo = _mm_mul_ps(xSUpperlo, xSUpperlo);
 			__m128 xTUpperhi = _mm_mul_ps(xSUpperhi, xSUpperhi);
@@ -558,14 +553,14 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 			__m128 xTRightlo = _mm_mul_ps(xSRightlo, xSRightlo);
 			__m128 xTRighthi = _mm_mul_ps(xSRighthi, xSRighthi);
 
-			xTUpperlo = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTUpperlo, xInvThreshold2)));
-			xTUpperhi = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTUpperhi, xInvThreshold2)));
-			xTLowerlo = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTLowerlo, xInvThreshold2)));
-			xTLowerhi = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTLowerhi, xInvThreshold2)));
-			xTLeftlo  = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTLeftlo,  xInvThreshold2)));
-			xTLefthi  = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTLefthi,  xInvThreshold2)));
-			xTRightlo = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTRightlo, xInvThreshold2)));
-			xTRighthi = _mm_rcp_ps_hp(_mm_add_ps(xOnef, _mm_mul_ps(xTRighthi, xInvThreshold2)));
+			xTUpperlo = _mm_rcp_ps_hp(_mm_madd_ps(xTUpperlo, xInvThreshold2, xOnef));
+			xTUpperhi = _mm_rcp_ps_hp(_mm_madd_ps(xTUpperhi, xInvThreshold2, xOnef));
+			xTLowerlo = _mm_rcp_ps_hp(_mm_madd_ps(xTLowerlo, xInvThreshold2, xOnef));
+			xTLowerhi = _mm_rcp_ps_hp(_mm_madd_ps(xTLowerhi, xInvThreshold2, xOnef));
+			xTLeftlo  = _mm_rcp_ps_hp(_mm_madd_ps(xTLeftlo,  xInvThreshold2, xOnef));
+			xTLefthi  = _mm_rcp_ps_hp(_mm_madd_ps(xTLefthi,  xInvThreshold2, xOnef));
+			xTRightlo = _mm_rcp_ps_hp(_mm_madd_ps(xTRightlo, xInvThreshold2, xOnef));
+			xTRighthi = _mm_rcp_ps_hp(_mm_madd_ps(xTRighthi, xInvThreshold2, xOnef));
 
 			xTUpperlo = _mm_mul_ps(xStrength2, xTUpperlo);
 			xTUpperhi = _mm_mul_ps(xStrength2, xTUpperhi);
@@ -578,25 +573,20 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 
 			xTUpperlo = _mm_mul_ps(xSUpperlo, xTUpperlo);
 			xTUpperhi = _mm_mul_ps(xSUpperhi, xTUpperhi);
-			xTLowerlo = _mm_mul_ps(xSLowerlo, xTLowerlo);
-			xTLowerhi = _mm_mul_ps(xSLowerhi, xTLowerhi);
 			xTLeftlo  = _mm_mul_ps(xSLeftlo,  xTLeftlo);
 			xTLefthi  = _mm_mul_ps(xSLefthi,  xTLefthi);
-			xTRightlo = _mm_mul_ps(xSRightlo, xTRightlo);
-			xTRighthi = _mm_mul_ps(xSRighthi, xTRighthi);
 
-			__m128 xAddLo, xAddHi;
-			xAddLo = xTUpperlo;
-			xAddHi = xTUpperhi;
-			xAddLo = _mm_add_ps(xAddLo, xTLowerlo);
-			xAddHi = _mm_add_ps(xAddHi, xTLowerhi);
-			xTLeftlo = _mm_add_ps(xTLeftlo, xTRightlo);
-			xTLefthi = _mm_add_ps(xTLefthi, xTRighthi);
-			xAddLo = _mm_add_ps(xAddLo, xTLeftlo);
-			xAddHi = _mm_add_ps(xAddHi, xTLefthi);
+			__m128 xAddLo0, xAddLo1, xAddHi0, xAddHi1;
+			xAddLo0 = _mm_madd_ps(xSLowerlo, xTLowerlo, xTUpperlo);
+			xAddHi0 = _mm_madd_ps(xSLowerhi, xTLowerhi, xTUpperhi);
+			xAddLo1 = _mm_madd_ps(xSRightlo, xTRightlo, xTLeftlo);
+			xAddHi1 = _mm_madd_ps(xSRighthi, xTRighthi, xTLefthi);
+
+			xAddLo0 = _mm_add_ps(xAddLo0, xAddLo1);
+			xAddHi0 = _mm_add_ps(xAddHi0, xAddHi1);
 #endif
 			__m128i xSrc = _mm_loadu_si128((__m128i *)(src));
-			_mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_cvtps_epi32(xAddLo), _mm_cvtps_epi32(xAddHi))));
+			_mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_cvtps_epi32(xAddLo0), _mm_cvtps_epi32(xAddHi0))));
 		}
 		//先端と終端をそのままコピー
 		*(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
