@@ -59,7 +59,7 @@ static DWORD get_availableSIMD() {
 
 static const PMD_MT_FUNC FUNC_LIST[] = {
 	{ gaussianH_avx2,  gaussianV_avx2,  { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2  }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2  } }, FMA3|AVX2|AVX },
-	{ gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx_fma3,   anisotropic_mt_exp_avx   }, { pmd_mt_avx_fma3,  pmd_mt_exp_avx   } }, FMA3|AVX },
+	{ gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx_fma4,   anisotropic_mt_exp_avx   }, { pmd_mt_avx_fma4,  pmd_mt_exp_avx   } }, FMA4|AVX },
 	{ gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx,        anisotropic_mt_exp_avx   }, { pmd_mt_avx,       pmd_mt_exp_avx   } }, AVX|SSE41|SSSE3|SSE2 },
 	{ gaussianH_sse41, gaussianV_sse41, { { anisotropic_mt_sse41,      anisotropic_mt_exp_sse41 }, { pmd_mt_sse41,     pmd_mt_exp_sse41 } }, SSE41|SSSE3|SSE2 },
 	{ gaussianH_ssse3, gaussianV_ssse3, { { anisotropic_mt_ssse3,      anisotropic_mt_exp_ssse3 }, { pmd_mt_ssse3,     pmd_mt_exp_ssse3 } }, SSSE3|SSE2 },
