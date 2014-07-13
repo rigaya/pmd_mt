@@ -7,8 +7,11 @@
 #if USE_SSE41
 #include <smmintrin.h> //SSE4.1
 #endif
-#if USE_AVX
+#if USE_AVX || USE_FMA3
 #include <immintrin.h> //AVX
+#endif
+#if USE_FMA4
+#include <intrin.h>
 #endif
 
 #pragma warning (push)
@@ -137,13 +140,29 @@ static __forceinline __m128i _mm_mullo_epi32_simd(__m128i x0, __m128i x1) {
 #endif
 }
 
+static __forceinline __m128 _mm_madd_ps(__m128 x0, __m128 x1, __m128 x2) {
+#if USE_FMA4
+	return _mm_macc_ps(x0, x1, x2);
+#elif USE_FMA3
+	return _mm_fmadd_ps(x0, x1, x2);
+#else
+	return _mm_add_ps(_mm_mul_ps(x0, x1), x2);
+#endif
+}
+
 static __forceinline __m128 _mm_rcp_ps_hp(__m128 x0) {
 	__m128 x1, x2;
 	x1 = _mm_rcp_ps(x0);
 	x0 = _mm_mul_ps(x0, x1);
 	x2 = _mm_add_ps(x1, x1);
+#if USE_FMA4
+	x2 = _mm_nmacc_ps(x0, x1, x2);
+#elif USE_FMA3
+	x2 = _mm_fnmadd_ps(x0, x1, x2);
+#else
 	x0 = _mm_mul_ps(x0, x1);
 	x2 = _mm_sub_ps(x2, x0);
+#endif
 	return x2;
 }
 

@@ -13,9 +13,11 @@ enum {
     SSE41  = 0x0008,
     SSE42  = 0x0010,
 	POPCNT = 0x0020,
-    AVX    = 0x0040,
-    AVX2   = 0x0080,
-	FMA3   = 0x0100,
+	XOP    = 0x0040,
+    AVX    = 0x0080,
+    AVX2   = 0x0100,
+	FMA3   = 0x0200,
+	FMA4   = 0x0400,
 };
 
 static DWORD get_availableSIMD() {
@@ -42,8 +44,15 @@ static DWORD get_availableSIMD() {
 #endif
 #if (_MSC_VER >= 1700)
 	__cpuid(CPUInfo, 7);
-	if ((simd & AVX) && (CPUInfo[1] & 0x00000020))
-		simd |= AVX2;
+	if (simd & AVX) {
+		if (CPUInfo[1] & 0x00000020)
+			simd |= AVX2;
+		__cpuid(CPUInfo, 0x80000001);
+		if (CPUInfo[2] & 0x00000800)
+			simd |= XOP;
+		if (CPUInfo[2] & 0x00010000)
+			simd |= FMA4;
+	}
 #endif
 	return simd;
 }
