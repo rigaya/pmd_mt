@@ -3,6 +3,8 @@
 #define USE_SSE41 1
 #define USE_AVX   0
 #define USE_AVX2  0
+#define USE_FMA3  0
+#define USE_FMA4  0
 
 #include "pmd_mt_simd.h"
 

@@ -45,6 +45,7 @@ void pmd_mt_ssse3(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_sse41(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_avx(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_avx_fma3(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_avx_fma4(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2);
 
 void pmd_mt_exp_sse2(int thread_id, int thread_num, void *param1, void *param2);
@@ -58,6 +59,7 @@ void anisotropic_mt_ssse3(int thread_id, int thread_num, void *param1, void *par
 void anisotropic_mt_sse41(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_avx(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_avx_fma3(int thread_id, int thread_num, void *param1, void *param2);
+void anisotropic_mt_avx_fma4(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2);
 
 void anisotropic_mt_exp_sse2(int thread_id, int thread_num, void *param1, void *param2);

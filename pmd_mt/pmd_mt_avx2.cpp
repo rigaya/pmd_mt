@@ -4,6 +4,7 @@
 #define USE_AVX   1
 #define USE_AVX2  1
 #define USE_FMA3  1
+#define USE_FMA4  0
 #define USE_VPGATHER 0
 
 #include <cstdint>
