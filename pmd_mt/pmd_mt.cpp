@@ -136,7 +136,7 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
     int y_end   = (fpip->h * (thread_id+1)) / thread_num;
 
     PIXEL_YC *ycp, *ycp2;
-    PIXEL_YC *gauss = (PIXEL_YC *)param2;
+    PIXEL_YC *ycp_gauss = (PIXEL_YC *)param2;
     const int w = fpip->w-2;
     const int max_w = fpip->max_w;
 
@@ -144,7 +144,7 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
     //端は条件判定をした方がソースがすっきりしますが、処理が遅くなるので強引に計算しています
     for (int y = y_start; y < y_end; y++) {
         ycp  = fpip->ycp_temp + y*max_w;
-        ycp2 = gauss + y*max_w;
+        ycp2 = ycp_gauss + y*max_w;
         //左端
         ycp2->y  = (ycp[ 0].y  + (ycp[ 0].y <<2) + (ycp[0].y *6) + (ycp[1].y <<2) + ycp[2].y ) >> 4;
         ycp2->cb = (ycp[ 0].cb + (ycp[ 0].cb<<2) + (ycp[0].cb*6) + (ycp[1].cb<<2) + ycp[2].cb) >> 4;
@@ -235,7 +235,7 @@ void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
 //---------------------------------------------------------------------
 void pmd_mt(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
-    PIXEL_YC *gauss            = ((PMD_MT_PRM *)param2)->gauss;
+    PIXEL_YC *ycp_gauss       = ((PMD_MT_PRM *)param2)->gauss;
     const int y_start = (fpip->h *  thread_id   ) / thread_num;
     const int y_end   = (fpip->h * (thread_id+1)) / thread_num;
 
@@ -253,7 +253,7 @@ void pmd_mt(int thread_id, int thread_num, void *param1, void *param2) {
     for (int y = max(1, y_start); y < y_fin; y++) {
         src  = fpip->ycp_edit + y*max_w +1;
         dst  = fpip->ycp_temp + y*max_w +1;
-        gref = gauss          + y*max_w +1;
+        gref = ycp_gauss      + y*max_w +1;
         
         *(dst-1) = *(src-1);
         //for (int x = 1; x < w-1; x++) {    //判定するたびに"-1"の計算をしてしまうので下に変更
