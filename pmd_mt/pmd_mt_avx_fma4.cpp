@@ -9,9 +9,9 @@
 #include "pmd_mt_simd.h"
 
 void pmd_mt_avx_fma4(int thread_id, int thread_num, void *param1, void *param2) {
-	pmd_mt_simd(thread_id, thread_num, param1, param2);
+    pmd_mt_simd(thread_id, thread_num, param1, param2);
 }
 
 void anisotropic_mt_avx_fma4(int thread_id, int thread_num, void *param1, void *param2) {
-	anisotropic_mt_simd(thread_id, thread_num, param1, param2);
+    anisotropic_mt_simd(thread_id, thread_num, param1, param2);
 }

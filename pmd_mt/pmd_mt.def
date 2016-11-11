@@ -1,5 +1,5 @@
 ﻿LIBRARY pmd_mt.auf
 
 EXPORTS
-	GetFilterTable @1
+    GetFilterTable @1
 

@@ -7,16 +7,16 @@
 #define CHECK_PERFORMANCE 0
 
 typedef struct PMD_MT_PRM {
-	PIXEL_YC *gauss;
-	int strength, threshold;
-	int *pmd;
+    PIXEL_YC *gauss;
+    int strength, threshold;
+    int *pmd;
 } PMD_MT_PRM;
 
 typedef struct PMD_MT_FUNC {
-	MULTI_THREAD_FUNC gaussianH;
-	MULTI_THREAD_FUNC gaussianV;
-	MULTI_THREAD_FUNC main_func[2][2];
-	DWORD simd;
+    MULTI_THREAD_FUNC gaussianH;
+    MULTI_THREAD_FUNC gaussianV;
+    MULTI_THREAD_FUNC main_func[2][2];
+    DWORD simd;
 } PMD_MT_FUNC;
 
 static const int PMD_TABLE_SIZE = 4500;
@@ -70,23 +70,23 @@ void anisotropic_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *
 
 
 typedef struct {
-	int frame_count;
-	__int64 tmp[16];
-	__int64 value[15];
-	__int64 freq;
+    int frame_count;
+    __int64 tmp[16];
+    __int64 value[15];
+    __int64 freq;
 } PERFORMANCE_CHECKER;
 
 #pragma warning (push)
 #pragma warning (disable: 4100)
 static __forceinline void get_qp_counter(__int64 *qpc) {
 #if CHECK_PERFORMANCE
-	QueryPerformanceCounter((LARGE_INTEGER *)qpc);
+    QueryPerformanceCounter((LARGE_INTEGER *)qpc);
 #endif
 }
 
 static __forceinline void add_qpctime(__int64 *qpc, __int64 add) {
 #if CHECK_PERFORMANCE
-	*qpc += add;
+    *qpc += add;
 #endif
 }
 #pragma warning (pop)
