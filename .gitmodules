@@ -1,0 +1,6 @@
+[submodule "xbyak"]
+	path = xbyak
+	url = https://github.com/herumi/xbyak
+[submodule "fmath"]
+	path = fmath
+	url = https://github.com/herumi/fmath

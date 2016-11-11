@@ -1,8 +1,13 @@
 ﻿#pragma once
+#define USE_FMATH 0 //expのほうはfmathでexp計算をするよりも表引きのほうが高速
 
 #include <cstdint>
 #include <cmath>
-
+#if USE_FMATH
+//ここではxbyakを使用しないほうが高速
+//#define FMATH_USE_XBYAK
+#include <fmath.hpp>
+#endif
 #include "pmd_mt.h"
 #include "simd_util.h"
 
@@ -353,13 +358,26 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 static __forceinline void pmd_mt_exp_simd(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
     PIXEL_YC *gauss    = ((PMD_MT_PRM *)param2)->gauss;
-    int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
     const int w = fpip->w;
     const int h = fpip->h;
     const int max_w = fpip->max_w;
     int y_start = h *  thread_id    / thread_num;
     int y_fin   = h * (thread_id+1) / thread_num;
-    
+#if USE_FMATH
+    const int strength =  ((PMD_MT_PRM *)param2)->strength;
+    const int threshold = ((PMD_MT_PRM *)param2)->threshold;
+
+    const float range = 4.0f;
+    const float threshold2 = pow(2.0f, threshold * 0.1f);
+    const float strength2 = strength * 0.01f;
+    //閾値の設定を変えた方が使いやすいです
+    const float inv_threshold2 = (float)(1.0 / threshold2);
+
+    __m128 xTempStrength2 = _mm_set1_ps(strength2 * (1.0f / range));
+    __m128 xMinusInvThreshold2 = _mm_set1_ps(-1.0f * inv_threshold2);
+#else
+    int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
+#endif
     //最初の行はそのままコピー
     if (0 == y_start) {
         memcpy_sse<false>((uint8_t *)fpip->ycp_temp, (uint8_t *)fpip->ycp_edit, w * sizeof(PIXEL_YC));
@@ -372,8 +390,10 @@ static __forceinline void pmd_mt_exp_simd(int thread_id, int thread_num, void *p
     uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
     uint8_t *gau_line = (uint8_t *)(gauss          + y_start * max_w);
 
+#if !USE_FMATH
     __declspec(align(16)) int16_t diffBuf[32];
     __declspec(align(16)) int expBuf[32];
+#endif
     __m128i xPMDBufLimit = _mm_set1_epi16(PMD_TABLE_SIZE-1);
 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC), gau_line += max_w * sizeof(PIXEL_YC)) {
@@ -392,6 +412,69 @@ static __forceinline void pmd_mt_exp_simd(int thread_id, int thread_num, void *p
             getDiff(src, max_w, xSrcUpperDiff, xSrcLowerDiff, xSrcLeftDiff, xSrcRightDiff);
             getDiff(gau, max_w, xGauUpperDiff, xGauLowerDiff, xGauLeftDiff, xGauRightDiff);
 
+#if USE_FMATH
+            __m128 xGUpperlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xGauUpperDiff));
+            __m128 xGUpperhi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xGauUpperDiff));
+            __m128 xGLowerlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xGauLowerDiff));
+            __m128 xGLowerhi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xGauLowerDiff));
+            __m128 xGLeftlo  = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xGauLeftDiff));
+            __m128 xGLefthi  = _mm_cvtepi32_ps(cvthi_epi16_epi32(xGauLeftDiff));
+            __m128 xGRightlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xGauRightDiff));
+            __m128 xGRighthi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xGauRightDiff));
+
+            xGUpperlo = _mm_mul_ps(xGUpperlo, xGUpperlo);
+            xGUpperhi = _mm_mul_ps(xGUpperhi, xGUpperhi);
+            xGLowerlo = _mm_mul_ps(xGLowerlo, xGLowerlo);
+            xGLowerhi = _mm_mul_ps(xGLowerhi, xGLowerhi);
+            xGLeftlo  = _mm_mul_ps(xGLeftlo,  xGLeftlo);
+            xGLefthi  = _mm_mul_ps(xGLefthi,  xGLefthi);
+            xGRightlo = _mm_mul_ps(xGRightlo, xGRightlo);
+            xGRighthi = _mm_mul_ps(xGRighthi, xGRighthi);
+
+            xGUpperlo = _mm_mul_ps(xGUpperlo, xMinusInvThreshold2);
+            xGUpperhi = _mm_mul_ps(xGUpperhi, xMinusInvThreshold2);
+            xGLowerlo = _mm_mul_ps(xGLowerlo, xMinusInvThreshold2);
+            xGLowerhi = _mm_mul_ps(xGLowerhi, xMinusInvThreshold2);
+            xGLeftlo  = _mm_mul_ps(xGLeftlo,  xMinusInvThreshold2);
+            xGLefthi  = _mm_mul_ps(xGLefthi,  xMinusInvThreshold2);
+            xGRightlo = _mm_mul_ps(xGRightlo, xMinusInvThreshold2);
+            xGRighthi = _mm_mul_ps(xGRighthi, xMinusInvThreshold2);
+
+            xGUpperlo = fmath::exp_psC(xGUpperlo);
+            xGUpperhi = fmath::exp_psC(xGUpperhi);
+            xGLowerlo = fmath::exp_psC(xGLowerlo);
+            xGLowerhi = fmath::exp_psC(xGLowerhi);
+            xGLeftlo  = fmath::exp_psC(xGLeftlo);
+            xGLefthi  = fmath::exp_psC(xGLefthi);
+            xGRightlo = fmath::exp_psC(xGRightlo);
+            xGRighthi = fmath::exp_psC(xGRighthi);
+
+            xGUpperlo = _mm_mul_ps(xGUpperlo, xTempStrength2);
+            xGUpperhi = _mm_mul_ps(xGUpperhi, xTempStrength2);
+            xGLowerlo = _mm_mul_ps(xGLowerlo, xTempStrength2);
+            xGLowerhi = _mm_mul_ps(xGLowerhi, xTempStrength2);
+            xGLeftlo  = _mm_mul_ps(xGLeftlo,  xTempStrength2);
+            xGLefthi  = _mm_mul_ps(xGLefthi,  xTempStrength2);
+            xGRightlo = _mm_mul_ps(xGRightlo, xTempStrength2);
+            xGRighthi = _mm_mul_ps(xGRighthi, xTempStrength2);
+
+            xGUpperlo = _mm_mul_ps(xGUpperlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcUpperDiff)));
+            xGUpperhi = _mm_mul_ps(xGUpperhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcUpperDiff)));
+            xGLeftlo  = _mm_mul_ps(xGLeftlo,  _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLeftDiff)));
+            xGLefthi  = _mm_mul_ps(xGLefthi,  _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLeftDiff)));
+
+            __m128 xAddLo0, xAddLo1, xAddHi0, xAddHi1;
+            xAddLo0 = _mm_madd_ps(xGLowerlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLowerDiff)), xGUpperlo);
+            xAddHi0 = _mm_madd_ps(xGLowerhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLowerDiff)), xGUpperhi);
+            xAddLo1 = _mm_madd_ps(xGRightlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcRightDiff)), xGLeftlo);
+            xAddHi1 = _mm_madd_ps(xGRighthi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcRightDiff)), xGLefthi);
+
+            xAddLo0 = _mm_add_ps(xAddLo0, xAddLo1);
+            xAddHi0 = _mm_add_ps(xAddHi0, xAddHi1);
+
+            __m128i xSrc = _mm_loadu_si128((__m128i *)(src));
+            _mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_cvtps_epi32(xAddLo0), _mm_cvtps_epi32(xAddHi0))));
+#else
             xGauUpperDiff = _mm_abs_epi16_simd(xGauUpperDiff);
             xGauLowerDiff = _mm_abs_epi16_simd(xGauLowerDiff);
             xGauLeftDiff  = _mm_abs_epi16_simd(xGauLeftDiff);
@@ -399,7 +482,7 @@ static __forceinline void pmd_mt_exp_simd(int thread_id, int thread_num, void *p
 
             xGauUpperDiff = _mm_min_epi16(xGauUpperDiff, xPMDBufLimit);
             xGauLowerDiff = _mm_min_epi16(xGauLowerDiff, xPMDBufLimit);
-            xGauLeftDiff  = _mm_min_epi16(xGauLeftDiff,  xPMDBufLimit);
+            xGauLeftDiff  = _mm_min_epi16(xGauLeftDiff, xPMDBufLimit);
             xGauRightDiff = _mm_min_epi16(xGauRightDiff, xPMDBufLimit);
 
             _mm_store_si128((__m128i *)(diffBuf +  0), xGauUpperDiff);
@@ -444,6 +527,7 @@ static __forceinline void pmd_mt_exp_simd(int thread_id, int thread_num, void *p
 
             __m128i xSrc = _mm_loadu_si128((__m128i *)(src));
             _mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_srai_epi32(xAddLo, 16), _mm_srai_epi32(xAddHi, 16))));
+#endif
         }
         //先端と終端をそのままコピー
         *(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
@@ -603,7 +687,6 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 
 static __forceinline void anisotropic_mt_exp_simd(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
-    int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
     const int w = fpip->w;
     const int h = fpip->h;
     const int max_w = fpip->max_w;
@@ -621,10 +704,27 @@ static __forceinline void anisotropic_mt_exp_simd(int thread_id, int thread_num,
     uint8_t *src_line = (uint8_t *)(fpip->ycp_edit + y_start * max_w);
     uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
 
+#if USE_FMATH
+    const int strength =  ((PMD_MT_PRM *)param2)->strength;
+    const int threshold = ((PMD_MT_PRM *)param2)->threshold;
+
+    const float range = 4.0f;
+    const float strength2 = strength/100.0f;
+    //閾値の設定を変えた方が使いやすいです
+    const float inv_threshold2 = (float)(1.0 / (threshold*16/10.0*threshold*16/10.0));
+
+    // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x / threshold2 )) )  * strength2 )
+    // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x * inv_threshold2 )) )  * strength2 )
+
+    __m128 xStrength2 = _mm_set1_ps(strength2 / range);
+    __m128 xMinusInvThreshold2 = _mm_set1_ps(-1.0f * inv_threshold2);
+#else
+    int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
     __declspec(align(16)) int16_t diffBuf[32];
     __declspec(align(16)) int expBuf[32];
     __m128i xPMDBufMaxLimit = _mm_set1_epi16(PMD_TABLE_SIZE-1);
     __m128i xPMDBufMinLimit = _mm_set1_epi16(-PMD_TABLE_SIZE);
+#endif
 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
@@ -638,7 +738,69 @@ static __forceinline void anisotropic_mt_exp_simd(int thread_id, int thread_num,
         for ( ; src < src_fin; src += 16, dst += 16) {
             __m128i xSrcUpperDiff, xSrcLowerDiff, xSrcLeftDiff, xSrcRightDiff;
             getDiff(src, max_w, xSrcUpperDiff, xSrcLowerDiff, xSrcLeftDiff, xSrcRightDiff);
+#if USE_FMATH
+            __m128 xSUpperlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcUpperDiff));
+            __m128 xSUpperhi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcUpperDiff));
+            __m128 xSLowerlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLowerDiff));
+            __m128 xSLowerhi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLowerDiff));
+            __m128 xSLeftlo  = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLeftDiff));
+            __m128 xSLefthi  = _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLeftDiff));
+            __m128 xSRightlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcRightDiff));
+            __m128 xSRighthi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcRightDiff));
 
+            __m128 xTUpperlo = _mm_mul_ps(xSUpperlo, xSUpperlo);
+            __m128 xTUpperhi = _mm_mul_ps(xSUpperhi, xSUpperhi);
+            __m128 xTLowerlo = _mm_mul_ps(xSLowerlo, xSLowerlo);
+            __m128 xTLowerhi = _mm_mul_ps(xSLowerhi, xSLowerhi);
+            __m128 xTLeftlo  = _mm_mul_ps(xSLeftlo,  xSLeftlo);
+            __m128 xTLefthi  = _mm_mul_ps(xSLefthi,  xSLefthi);
+            __m128 xTRightlo = _mm_mul_ps(xSRightlo, xSRightlo);
+            __m128 xTRighthi = _mm_mul_ps(xSRighthi, xSRighthi);
+
+            xTUpperlo = _mm_mul_ps(xSUpperlo, xMinusInvThreshold2);
+            xTUpperhi = _mm_mul_ps(xSUpperhi, xMinusInvThreshold2);
+            xTLowerlo = _mm_mul_ps(xSLowerlo, xMinusInvThreshold2);
+            xTLowerhi = _mm_mul_ps(xSLowerhi, xMinusInvThreshold2);
+            xTLeftlo  = _mm_mul_ps(xSLeftlo,  xMinusInvThreshold2);
+            xTLefthi  = _mm_mul_ps(xSLefthi,  xMinusInvThreshold2);
+            xTRightlo = _mm_mul_ps(xSRightlo, xMinusInvThreshold2);
+            xTRighthi = _mm_mul_ps(xSRighthi, xMinusInvThreshold2);
+
+            xTUpperlo = fmath::exp_ps(xTUpperlo);
+            xTUpperhi = fmath::exp_ps(xTUpperhi);
+            xTLowerlo = fmath::exp_ps(xTLowerlo);
+            xTLowerhi = fmath::exp_ps(xTLowerhi);
+            xTLeftlo  = fmath::exp_ps(xTLeftlo);
+            xTLefthi  = fmath::exp_ps(xTLefthi);
+            xTRightlo = fmath::exp_ps(xTRightlo);
+            xTRighthi = fmath::exp_ps(xTRighthi);
+
+            xTUpperlo = _mm_mul_ps(xStrength2, xTUpperlo);
+            xTUpperhi = _mm_mul_ps(xStrength2, xTUpperhi);
+            xTLowerlo = _mm_mul_ps(xStrength2, xTLowerlo);
+            xTLowerhi = _mm_mul_ps(xStrength2, xTLowerhi);
+            xTLeftlo  = _mm_mul_ps(xStrength2, xTLeftlo);
+            xTLefthi  = _mm_mul_ps(xStrength2, xTLefthi);
+            xTRightlo = _mm_mul_ps(xStrength2, xTRightlo);
+            xTRighthi = _mm_mul_ps(xStrength2, xTRighthi);
+
+            xTUpperlo = _mm_mul_ps(xSUpperlo, xTUpperlo);
+            xTUpperhi = _mm_mul_ps(xSUpperhi, xTUpperhi);
+            xTLeftlo  = _mm_mul_ps(xSLeftlo,  xTLeftlo);
+            xTLefthi  = _mm_mul_ps(xSLefthi,  xTLefthi);
+
+            __m128 xAddLo0, xAddLo1, xAddHi0, xAddHi1;
+            xAddLo0 = _mm_madd_ps(xSLowerlo, xTLowerlo, xTUpperlo);
+            xAddHi0 = _mm_madd_ps(xSLowerhi, xTLowerhi, xTUpperhi);
+            xAddLo1 = _mm_madd_ps(xSRightlo, xTRightlo, xTLeftlo);
+            xAddHi1 = _mm_madd_ps(xSRighthi, xTRighthi, xTLefthi);
+
+            xAddLo0 = _mm_add_ps(xAddLo0, xAddLo1);
+            xAddHi0 = _mm_add_ps(xAddHi0, xAddHi1);
+
+            __m128i xSrc = _mm_loadu_si128((__m128i *)(src));
+            _mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(_mm_cvtps_epi32(xAddLo0), _mm_cvtps_epi32(xAddHi0))));
+#else
             xSrcUpperDiff = _mm_max_epi16(xSrcUpperDiff, xPMDBufMinLimit);
             xSrcLowerDiff = _mm_max_epi16(xSrcLowerDiff, xPMDBufMinLimit);
             xSrcLeftDiff  = _mm_max_epi16(xSrcLeftDiff,  xPMDBufMinLimit);
@@ -682,6 +844,7 @@ static __forceinline void anisotropic_mt_exp_simd(int thread_id, int thread_num,
 
             __m128i xSrc = _mm_loadu_si128((__m128i *)(src));
             _mm_storeu_si128((__m128i *)(dst), _mm_add_epi16(xSrc, _mm_packs_epi32(xAddLo, xAddHi)));
+#endif
         }
         //先端と終端をそのままコピー
         *(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
