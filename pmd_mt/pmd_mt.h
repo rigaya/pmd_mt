@@ -53,6 +53,7 @@ void pmd_mt_exp_ssse3(int thread_id, int thread_num, void *param1, void *param2)
 void pmd_mt_exp_sse41(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_exp_avx2_gather(int thread_id, int thread_num, void *param1, void *param2);
 
 void anisotropic_mt_sse2(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_ssse3(int thread_id, int thread_num, void *param1, void *param2);
@@ -67,6 +68,7 @@ void anisotropic_mt_exp_ssse3(int thread_id, int thread_num, void *param1, void 
 void anisotropic_mt_exp_sse41(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_exp_avx(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2);
+void anisotropic_mt_exp_avx2_gather(int thread_id, int thread_num, void *param1, void *param2);
 
 
 typedef struct {

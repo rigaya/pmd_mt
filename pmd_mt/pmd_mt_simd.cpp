@@ -18,6 +18,7 @@ enum {
     AVX2   = 0x0100,
     FMA3   = 0x0200,
     FMA4   = 0x0400,
+    FAST_GATHER = 0x0800,
 };
 
 static DWORD get_availableSIMD() {
@@ -47,6 +48,8 @@ static DWORD get_availableSIMD() {
     if (simd & AVX) {
         if (CPUInfo[1] & 0x00000020)
             simd |= AVX2;
+        if (CPUInfo[1] & (1<<18)) //rdseed -> Broadwell
+            simd |= FAST_GATHER;
         __cpuid(CPUInfo, 0x80000001);
         if (CPUInfo[2] & 0x00000800)
             simd |= XOP;
@@ -58,14 +61,15 @@ static DWORD get_availableSIMD() {
 }
 
 static const PMD_MT_FUNC FUNC_LIST[] = {
-    { gaussianH_avx2,  gaussianV_avx2,  { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2  }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2  } }, AVX2|FMA3|AVX },
-    { gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx_fma3,   anisotropic_mt_exp_avx   }, { pmd_mt_avx_fma3,  pmd_mt_exp_avx   } }, FMA3|AVX },
-    { gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx_fma4,   anisotropic_mt_exp_avx   }, { pmd_mt_avx_fma4,  pmd_mt_exp_avx   } }, FMA4|AVX },
-    { gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx,        anisotropic_mt_exp_avx   }, { pmd_mt_avx,       pmd_mt_exp_avx   } }, AVX|SSE41|SSSE3|SSE2 },
-    { gaussianH_sse41, gaussianV_sse41, { { anisotropic_mt_sse41,      anisotropic_mt_exp_sse41 }, { pmd_mt_sse41,     pmd_mt_exp_sse41 } }, SSE41|SSSE3|SSE2 },
-    { gaussianH_ssse3, gaussianV_ssse3, { { anisotropic_mt_ssse3,      anisotropic_mt_exp_ssse3 }, { pmd_mt_ssse3,     pmd_mt_exp_ssse3 } }, SSSE3|SSE2 },
-    { gaussianH_sse2,  gaussianV_sse2,  { { anisotropic_mt_sse2,       anisotropic_mt_exp_sse2  }, { pmd_mt_sse2,      pmd_mt_exp_sse2  } }, SSE2 },
-    { gaussianH,       gaussianV,       { { anisotropic_mt,            anisotropic_mt           }, { pmd_mt,           pmd_mt           } }, NONE },
+    { gaussianH_avx2,  gaussianV_avx2,  { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2_gather }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2_gather } }, FAST_GATHER|AVX2|FMA3|AVX },
+    { gaussianH_avx2,  gaussianV_avx2,  { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2        }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2        } }, AVX2|FMA3|AVX },
+    { gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx_fma3,   anisotropic_mt_exp_avx         }, { pmd_mt_avx_fma3,  pmd_mt_exp_avx         } }, FMA3|AVX },
+    { gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx_fma4,   anisotropic_mt_exp_avx         }, { pmd_mt_avx_fma4,  pmd_mt_exp_avx         } }, FMA4|AVX },
+    { gaussianH_avx,   gaussianV_avx,   { { anisotropic_mt_avx,        anisotropic_mt_exp_avx         }, { pmd_mt_avx,       pmd_mt_exp_avx         } }, AVX|SSE41|SSSE3|SSE2 },
+    { gaussianH_sse41, gaussianV_sse41, { { anisotropic_mt_sse41,      anisotropic_mt_exp_sse41       }, { pmd_mt_sse41,     pmd_mt_exp_sse41       } }, SSE41|SSSE3|SSE2 },
+    { gaussianH_ssse3, gaussianV_ssse3, { { anisotropic_mt_ssse3,      anisotropic_mt_exp_ssse3       }, { pmd_mt_ssse3,     pmd_mt_exp_ssse3       } }, SSSE3|SSE2 },
+    { gaussianH_sse2,  gaussianV_sse2,  { { anisotropic_mt_sse2,       anisotropic_mt_exp_sse2        }, { pmd_mt_sse2,      pmd_mt_exp_sse2        } }, SSE2 },
+    { gaussianH,       gaussianV,       { { anisotropic_mt,            anisotropic_mt                 }, { pmd_mt,           pmd_mt                 } }, NONE },
 };
 
 const PMD_MT_FUNC *get_pmd_func_list() {
@@ -77,3 +81,10 @@ const PMD_MT_FUNC *get_pmd_func_list() {
     }
     return NULL;
 };
+
+void avx2_dummy() {
+    __asm {
+        vpxor ymm0, ymm0, ymm0
+    };
+}
+
