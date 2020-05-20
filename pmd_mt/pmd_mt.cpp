@@ -246,7 +246,7 @@ void pmd_mt(int thread_id, int thread_num, void *param1, void *param2) {
 
     PIXEL_YC *dst, *src, *gref;
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
-    
+
     if (0 == y_start)
         memcpy(fpip->ycp_temp, fpip->ycp_edit, w * sizeof(PIXEL_YC));
 
@@ -254,11 +254,11 @@ void pmd_mt(int thread_id, int thread_num, void *param1, void *param2) {
         src  = fpip->ycp_edit + y*max_w +1;
         dst  = fpip->ycp_temp + y*max_w +1;
         gref = ycp_gauss      + y*max_w +1;
-        
+
         *(dst-1) = *(src-1);
         //for (int x = 1; x < w-1; x++) {    //判定するたびに"-1"の計算をしてしまうので下に変更
         for (int x = 2; x < w; x++) {
-            dst->y  = src->y  + (short)(( 
+            dst->y  = src->y  + (short)((
                     ((src-max_w)->y  - src->y )*pmdp[(gref-max_w)->y  - gref->y ] +    //上
                     ((src-1    )->y  - src->y )*pmdp[(gref-1)->y      - gref->y ] +    //左
                     ((src+1    )->y  - src->y )*pmdp[(gref+1)->y      - gref->y ] +    //右
@@ -298,14 +298,14 @@ void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2) {
 
     PIXEL_YC *dst, *src;
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
-    
+
     if (0 == y_start)
         memcpy(fpip->ycp_temp, fpip->ycp_edit, w * sizeof(PIXEL_YC));
 
     for (int y = max(1, y_start); y < y_fin; y++) {
         src = fpip->ycp_edit + y*max_w +1;
         dst = fpip->ycp_temp + y*max_w +1;
-        
+
         *(dst-1) = *(src-1);
         for (int x = 2; x < w; x++) {
             dst->y  = src->y  + (short)(
@@ -432,7 +432,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
     const int useExp    = !!fp->check[0];
     const int strength  = fp->track[0];
     const int threshold = fp->track[1];
-    
+
     //事前に計算した値を入れる領域を確保
     //領域を確保できなければここで処理は止めてしまいます
     if (NULL == PMD) {
@@ -507,7 +507,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
         if (error) {
             MessageBox(NULL, "Error at main calc", "PMD_MT", NULL);
         }
-        
+
         free(debug);
 #endif
         //テンポラリ領域と入れ替えます

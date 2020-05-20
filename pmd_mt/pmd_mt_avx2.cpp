@@ -25,7 +25,7 @@ static __forceinline __m256i gaussian_1_4_6_4_1(__m256i y0, __m256i y1, __m256i 
     static const __declspec(align(32)) short MULTIPLIZER[16] = { 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6 };
     y0 = _mm256_adds_epi16(y0, y4);
     y1 = _mm256_adds_epi16(y1, y3);
-    
+
     __m256i y0_lower = cvtlo256_epi16_epi32(y0);
     __m256i y0_upper = cvthi256_epi16_epi32(y0);
     __m256i y1_lower = _mm256_madd_epi16(_mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
@@ -91,7 +91,7 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
                 auto tmp_ptr = [tmp, tmp_line_size](int y) { return tmp + (y&3)*tmp_line_size; };
                 auto guassianH_process_internal = [&](int i) {
                     __m256i ySrc0 = _mm256_loadu_si256((__m256i *)(src + 2 * max_w * sizeof(PIXEL_YC) + (i<<5)));
-                
+
                     __m256i y0 = _mm256_load_si256((__m256i *)(tmp_ptr(y+0) + (i<<5)));
                     __m256i y1 = _mm256_load_si256((__m256i *)(tmp_ptr(y+1) + (i<<5)));
                     __m256i y2 = _mm256_load_si256((__m256i *)(tmp_ptr(y+2) + (i<<5)));
@@ -172,7 +172,7 @@ void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
             ySrc2 = _mm256_loadu_si256((__m256i *)(buf + 32));
             ySrc3 = _mm256_loadu_si256((__m256i *)(buf + 64));
             ySrc4 = _mm256_loadu_si256((__m256i *)(buf + 96));
-            
+
             guassianV_process(dst, ySrc0, ySrc1, ySrc2, ySrc3, ySrc4);
 
             ySrc0 = ySrc3;
@@ -224,23 +224,34 @@ static __forceinline void pmd_mt_avx2_line(uint8_t *dst, uint8_t *src, uint8_t *
         yGRightlo = _mm256_mul_ps(yGRightlo, yGRightlo);
         yGRighthi = _mm256_mul_ps(yGRighthi, yGRighthi);
 
-        yGUpperlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGUpperlo, yInvThreshold2, yOnef));
-        yGUpperhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGUpperhi, yInvThreshold2, yOnef));
-        yGLowerlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLowerlo, yInvThreshold2, yOnef));
-        yGLowerhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLowerhi, yInvThreshold2, yOnef));
-        yGLeftlo  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLeftlo,  yInvThreshold2, yOnef));
-        yGLefthi  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGLefthi,  yInvThreshold2, yOnef));
-        yGRightlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGRightlo, yInvThreshold2, yOnef));
-        yGRighthi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yGRighthi, yInvThreshold2, yOnef));
+        yGUpperlo = _mm256_fmadd_ps(yGUpperlo, yInvThreshold2, yOnef);
+        yGUpperhi = _mm256_fmadd_ps(yGUpperhi, yInvThreshold2, yOnef);
+        yGLowerlo = _mm256_fmadd_ps(yGLowerlo, yInvThreshold2, yOnef);
+        yGLowerhi = _mm256_fmadd_ps(yGLowerhi, yInvThreshold2, yOnef);
+        yGLeftlo  = _mm256_fmadd_ps(yGLeftlo,  yInvThreshold2, yOnef);
+        yGLefthi  = _mm256_fmadd_ps(yGLefthi,  yInvThreshold2, yOnef);
+        yGRightlo = _mm256_fmadd_ps(yGRightlo, yInvThreshold2, yOnef);
+        yGRighthi = _mm256_fmadd_ps(yGRighthi, yInvThreshold2, yOnef);
 
-        yGUpperlo = _mm256_mul_ps(yStrength2, yGUpperlo);
-        yGUpperhi = _mm256_mul_ps(yStrength2, yGUpperhi);
-        yGLowerlo = _mm256_mul_ps(yStrength2, yGLowerlo);
-        yGLowerhi = _mm256_mul_ps(yStrength2, yGLowerhi);
-        yGLeftlo  = _mm256_mul_ps(yStrength2, yGLeftlo);
-        yGLefthi  = _mm256_mul_ps(yStrength2, yGLefthi);
-        yGRightlo = _mm256_mul_ps(yStrength2, yGRightlo);
-        yGRighthi = _mm256_mul_ps(yStrength2, yGRighthi);
+#if 0
+        yGUpperlo = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGUpperlo));
+        yGUpperhi = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGUpperhi));
+        yGLowerlo = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGLowerlo));
+        yGLowerhi = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGLowerhi));
+        yGLeftlo  = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGLeftlo));
+        yGLefthi  = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGLefthi));
+        yGRightlo = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGRightlo));
+        yGRighthi = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yGRighthi));
+#else
+        yGUpperlo = _mm256_div_ps(yStrength2, yGUpperlo);
+        yGUpperhi = _mm256_div_ps(yStrength2, yGUpperhi);
+        yGLowerlo = _mm256_div_ps(yStrength2, yGLowerlo);
+        yGLowerhi = _mm256_div_ps(yStrength2, yGLowerhi);
+        yGLeftlo  = _mm256_div_ps(yStrength2, yGLeftlo);
+        yGLefthi  = _mm256_div_ps(yStrength2, yGLefthi);
+        yGRightlo = _mm256_div_ps(yStrength2, yGRightlo);
+        yGRighthi = _mm256_div_ps(yStrength2, yGRighthi);
+#endif
 
         __m256 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
         yGUpperlo = _mm256_mul_ps(yGUpperlo, _mm256_cvtepi32_ps(cvtlo256_epi16_epi32(ySrcUpperDiff)));
@@ -284,7 +295,7 @@ void pmd_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2)
 
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x / threshold2 )) )  * strength2 )
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x * inv_threshold2 )) )  * strength2 )
-    
+
     __m256 yInvThreshold2 = _mm256_set1_ps(inv_threshold2);
     __m256 yStrength2 = _mm256_set1_ps(strength2 / range);
     __m256 yOnef = _mm256_set1_ps(1.0f);
@@ -364,23 +375,34 @@ static __forceinline void anisotropic_mt_avx2_line(uint8_t *dst, uint8_t *src, i
         __m256 yTRightlo = _mm256_mul_ps(xSRightlo, xSRightlo);
         __m256 yTRighthi = _mm256_mul_ps(xSRighthi, xSRighthi);
 
-        yTUpperlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTUpperlo, yInvThreshold2, yOnef));
-        yTUpperhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTUpperhi, yInvThreshold2, yOnef));
-        yTLowerlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLowerlo, yInvThreshold2, yOnef));
-        yTLowerhi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLowerhi, yInvThreshold2, yOnef));
-        yTLeftlo  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLeftlo,  yInvThreshold2, yOnef));
-        yTLefthi  = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTLefthi,  yInvThreshold2, yOnef));
-        yTRightlo = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTRightlo, yInvThreshold2, yOnef));
-        yTRighthi = _mm256_rcp_ps_hp(_mm256_fmadd_ps(yTRighthi, yInvThreshold2, yOnef));
+        yTUpperlo = _mm256_fmadd_ps(yTUpperlo, yInvThreshold2, yOnef);
+        yTUpperhi = _mm256_fmadd_ps(yTUpperhi, yInvThreshold2, yOnef);
+        yTLowerlo = _mm256_fmadd_ps(yTLowerlo, yInvThreshold2, yOnef);
+        yTLowerhi = _mm256_fmadd_ps(yTLowerhi, yInvThreshold2, yOnef);
+        yTLeftlo  = _mm256_fmadd_ps(yTLeftlo,  yInvThreshold2, yOnef);
+        yTLefthi  = _mm256_fmadd_ps(yTLefthi,  yInvThreshold2, yOnef);
+        yTRightlo = _mm256_fmadd_ps(yTRightlo, yInvThreshold2, yOnef);
+        yTRighthi = _mm256_fmadd_ps(yTRighthi, yInvThreshold2, yOnef);
 
-        yTUpperlo = _mm256_mul_ps(yStrength2, yTUpperlo);
-        yTUpperhi = _mm256_mul_ps(yStrength2, yTUpperhi);
-        yTLowerlo = _mm256_mul_ps(yStrength2, yTLowerlo);
-        yTLowerhi = _mm256_mul_ps(yStrength2, yTLowerhi);
-        yTLeftlo  = _mm256_mul_ps(yStrength2, yTLeftlo);
-        yTLefthi  = _mm256_mul_ps(yStrength2, yTLefthi);
-        yTRightlo = _mm256_mul_ps(yStrength2, yTRightlo);
-        yTRighthi = _mm256_mul_ps(yStrength2, yTRighthi);
+#if 0
+        yTUpperlo = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTUpperlo));
+        yTUpperhi = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTUpperhi));
+        yTLowerlo = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTLowerlo));
+        yTLowerhi = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTLowerhi));
+        yTLeftlo  = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTLeftlo));
+        yTLefthi  = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTLefthi));
+        yTRightlo = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTRightlo));
+        yTRighthi = _mm256_mul_ps(yStrength2, _mm256_rcp_ps_hp(yTRighthi));
+#else
+        yTUpperlo = _mm256_div_ps(yStrength2, yTUpperlo);
+        yTUpperhi = _mm256_div_ps(yStrength2, yTUpperhi);
+        yTLowerlo = _mm256_div_ps(yStrength2, yTLowerlo);
+        yTLowerhi = _mm256_div_ps(yStrength2, yTLowerhi);
+        yTLeftlo  = _mm256_div_ps(yStrength2, yTLeftlo);
+        yTLefthi  = _mm256_div_ps(yStrength2, yTLefthi);
+        yTRightlo = _mm256_div_ps(yStrength2, yTRightlo);
+        yTRighthi = _mm256_div_ps(yStrength2, yTRighthi);
+#endif
 
         __m256 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
         yAddLo0   = _mm256_fmadd_ps(xSLowerlo, yTLowerlo, _mm256_mul_ps(xSUpperlo, yTUpperlo));
@@ -417,11 +439,11 @@ void anisotropic_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void 
 
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x / threshold2 )) )  * strength2 )
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x * inv_threshold2 )) )  * strength2 )
-    
+
     __m256 yInvThreshold2 = _mm256_set1_ps(inv_threshold2);
     __m256 yStrength2 = _mm256_set1_ps(strength2 / range);
     __m256 yOnef = _mm256_set1_ps(1.0f);
-    
+
     //最初の行はそのままコピー
     if (0 == y_start) {
         memcpy_avx2<false, false, false>((uint8_t *)fpip->ycp_temp, (uint8_t *)fpip->ycp_edit, w * sizeof(PIXEL_YC));
@@ -436,7 +458,7 @@ void anisotropic_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
         uint8_t *dst = dst_line;
-        
+
         //まずは、先端終端ピクセルを気にせず普通に処理してしまう
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない

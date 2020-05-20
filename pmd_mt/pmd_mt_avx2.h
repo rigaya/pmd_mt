@@ -36,7 +36,7 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
     const int h = fpip->h;
     const int max_w = fpip->max_w;
     int y_start = h *  thread_id    / thread_num;
-    int y_fin   = h * (thread_id+1) / thread_num;
+    int y_fin = h * (thread_id + 1) / thread_num;
 #if USE_FMATH
     const int strength =  ((PMD_MT_PRM *)param2)->strength;
     const int threshold = ((PMD_MT_PRM *)param2)->threshold;
@@ -52,7 +52,7 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
 #else
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
 #endif
-    
+
     //最初の行はそのままコピー
     if (0 == y_start) {
         memcpy_avx2<false, false, false>((uint8_t *)fpip->ycp_temp, (uint8_t *)fpip->ycp_edit, w * sizeof(PIXEL_YC));
@@ -64,7 +64,7 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
     uint8_t *src_line = (uint8_t *)(fpip->ycp_edit + y_start * max_w);
     uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
     uint8_t *gau_line = (uint8_t *)(gauss          + y_start * max_w);
-    
+
 #if !USE_VPGATHER && !USE_FMATH
     __declspec(align(32)) int16_t diffBuf[64];
     __declspec(align(32)) int expBuf[64];
@@ -75,7 +75,7 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
         uint8_t *src = src_line;
         uint8_t *dst = dst_line;
         uint8_t *gau = gau_line;
-        
+
         //まずは、先端終端ピクセルを気にせず普通に処理してしまう
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
@@ -243,7 +243,7 @@ static __forceinline void anisotropic_mt_exp_avx2_base(int thread_id, int thread
     const int max_w = fpip->max_w;
     int y_start = h *  thread_id    / thread_num;
     int y_fin   = h * (thread_id+1) / thread_num;
-    
+
     //最初の行はそのままコピー
     if (0 == y_start) {
         memcpy_avx2<false, false, false>((uint8_t *)fpip->ycp_temp, (uint8_t *)fpip->ycp_edit, w * sizeof(PIXEL_YC));
@@ -271,7 +271,7 @@ static __forceinline void anisotropic_mt_exp_avx2_base(int thread_id, int thread
 #else
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
 #endif
-    
+
 #if !USE_VPGATHER && !USE_FMATH
     __declspec(align(32)) int16_t diffBuf[64];
     __declspec(align(32)) int expBuf[64];
@@ -282,7 +282,7 @@ static __forceinline void anisotropic_mt_exp_avx2_base(int thread_id, int thread
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
         uint8_t *dst = dst_line;
-        
+
         //まずは、先端終端ピクセルを気にせず普通に処理してしまう
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない

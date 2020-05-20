@@ -16,7 +16,7 @@ static __forceinline __m128i gaussian_1_4_6_4_1(__m128i x0, __m128i x1, __m128i 
     static const __declspec(align(16)) short MULTIPLIZER[8] = { 4, 6, 4, 6, 4, 6, 4, 6 };
     x0 = _mm_adds_epi16(x0, x4);
     x1 = _mm_adds_epi16(x1, x3);
-    
+
     __m128i x0_lower = cvtlo_epi16_epi32(x0);
     __m128i x0_upper = cvthi_epi16_epi32(x0);
     __m128i x1_lower = _mm_madd_epi16(_mm_unpacklo_epi16(x1, x2), _mm_load_si128((__m128i *)MULTIPLIZER));
@@ -81,7 +81,7 @@ static __forceinline void gaussianH_simd(int thread_id, int thread_num, void *pa
                 auto tmp_ptr = [tmp, tmp_line_size](int y) { return tmp + (y&3)*tmp_line_size; };
                 auto guassianH_process_internal =[&](int i) {
                     __m128i xSrc0 = _mm_loadu_si128((__m128i *)(src + 2 * max_w * sizeof(PIXEL_YC) + (i<<4)));
-                
+
                     __m128i x0 = _mm_load_si128((__m128i *)(tmp_ptr(y+0) + (i<<4)));
                     __m128i x1 = _mm_load_si128((__m128i *)(tmp_ptr(y+1) + (i<<4)));
                     __m128i x2 = _mm_load_si128((__m128i *)(tmp_ptr(y+2) + (i<<4)));
@@ -217,7 +217,7 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
 
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x / threshold2 )) )  * strength2 )
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x * inv_threshold2 )) )  * strength2 )
-    
+
 #if USE_AVX
     __m256 yStrength2 = _mm256_set1_ps(strength2 / range);
     __m256 yInvThreshold2 = _mm256_set1_ps(inv_threshold2);
@@ -264,7 +264,7 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
             __m128 xGLefthi  = _mm_cvtepi32_ps(cvthi_epi16_epi32(xGauLeftDiff));
             __m128 xGRightlo = _mm_cvtepi32_ps(cvtlo_epi16_epi32(xGauRightDiff));
             __m128 xGRighthi = _mm_cvtepi32_ps(cvthi_epi16_epi32(xGauRightDiff));
-            
+
 #if USE_AVX
             __m256 yGUpper = _mm256_set_m128(xGUpperhi, xGUpperlo);
             __m256 yGLower = _mm256_set_m128(xGLowerhi, xGLowerlo);
@@ -275,7 +275,7 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
             yGLower = _mm256_mul_ps(yGLower, yGLower);
             yGLeft  = _mm256_mul_ps(yGLeft,  yGLeft);
             yGRight = _mm256_mul_ps(yGRight, yGRight);
-            
+
             yGUpper = _mm256_rcp_ps_hp(_mm256_madd_ps(yGUpper, yInvThreshold2, yOnef));
             yGLower = _mm256_rcp_ps_hp(_mm256_madd_ps(yGLower, yInvThreshold2, yOnef));
             yGLeft  = _mm256_rcp_ps_hp(_mm256_madd_ps(yGLeft,  yInvThreshold2, yOnef));
@@ -294,7 +294,7 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
             yGUpper = _mm256_madd_ps(yGUpper, ySUpper, _mm256_mul_ps(yGLower, ySLower));
             yGLeft  = _mm256_madd_ps(yGLeft,  ySLeft,  _mm256_mul_ps(yGRight, ySRight));
             yGUpper = _mm256_add_ps(yGUpper, yGLeft);
-            
+
             __m128 xAddHi0 = _mm256_extractf128_ps(yGUpper, 1);
             __m128 xAddLo0 = _mm256_castps256_ps128(yGUpper);
 #else
@@ -329,7 +329,7 @@ static __forceinline void pmd_mt_simd(int thread_id, int thread_num, void *param
             xGUpperhi = _mm_mul_ps(xGUpperhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcUpperDiff)));
             xGLeftlo  = _mm_mul_ps(xGLeftlo,  _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLeftDiff)));
             xGLefthi  = _mm_mul_ps(xGLefthi,  _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLeftDiff)));
-            
+
             __m128 xAddLo0, xAddLo1, xAddHi0, xAddHi1;
             xAddLo0 = _mm_madd_ps(xGLowerlo, _mm_cvtepi32_ps(cvtlo_epi16_epi32(xSrcLowerDiff)), xGUpperlo);
             xAddHi0 = _mm_madd_ps(xGLowerhi, _mm_cvtepi32_ps(cvthi_epi16_epi32(xSrcLowerDiff)), xGUpperhi);
@@ -400,7 +400,7 @@ static __forceinline void pmd_mt_exp_simd(int thread_id, int thread_num, void *p
         uint8_t *src = src_line;
         uint8_t *dst = dst_line;
         uint8_t *gau = gau_line;
-        
+
         //まずは、先端終端ピクセルを気にせず普通に処理してしまう
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
@@ -557,7 +557,7 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
 
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x / threshold2 )) )  * strength2 )
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x * inv_threshold2 )) )  * strength2 )
-    
+
 #if USE_AVX
     __m256 yStrength2 = _mm256_set1_ps(strength2 / range);
     __m256 yInvThreshold2 = _mm256_set1_ps(inv_threshold2);
@@ -567,7 +567,7 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
     __m128 xInvThreshold2 = _mm_set1_ps(inv_threshold2);
     __m128 xOnef = _mm_set1_ps(1.0f);
 #endif
-    
+
     //最初の行はそのままコピー
     if (0 == y_start) {
         memcpy_sse<false>((uint8_t *)fpip->ycp_temp, (uint8_t *)fpip->ycp_edit, w * sizeof(PIXEL_YC));
@@ -582,7 +582,7 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
         uint8_t *dst = dst_line;
-        
+
         //まずは、先端終端ピクセルを気にせず普通に処理してしまう
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
@@ -624,7 +624,7 @@ static __forceinline void anisotropic_mt_simd(int thread_id, int thread_num, voi
             yTUpper = _mm256_madd_ps(ySUpper, yTUpper, _mm256_mul_ps(ySLower, yTLower));
             yTLeft  = _mm256_madd_ps(ySLeft,  yTLeft,  _mm256_mul_ps(ySRight, yTRight));
             yTUpper = _mm256_add_ps(yTUpper, yTLeft);
-            
+
             __m128 xAddHi0 = _mm256_extractf128_ps(yTUpper, 1);
             __m128 xAddLo0 = _mm256_castps256_ps128(yTUpper);
 #else
@@ -692,7 +692,7 @@ static __forceinline void anisotropic_mt_exp_simd(int thread_id, int thread_num,
     const int max_w = fpip->max_w;
     int y_start = h *  thread_id    / thread_num;
     int y_fin   = h * (thread_id+1) / thread_num;
-    
+
     //最初の行はそのままコピー
     if (0 == y_start) {
         memcpy_sse<false>((uint8_t *)fpip->ycp_temp, (uint8_t *)fpip->ycp_edit, w * sizeof(PIXEL_YC));
@@ -729,7 +729,7 @@ static __forceinline void anisotropic_mt_exp_simd(int thread_id, int thread_num,
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
         uint8_t *dst = dst_line;
-        
+
         //まずは、先端終端ピクセルを気にせず普通に処理してしまう
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
