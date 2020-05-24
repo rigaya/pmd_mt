@@ -15,6 +15,7 @@ typedef struct PMD_MT_PRM {
 typedef struct PMD_MT_FUNC {
     MULTI_THREAD_FUNC gaussianH;
     MULTI_THREAD_FUNC gaussianV;
+    MULTI_THREAD_FUNC gaussianHV;
     MULTI_THREAD_FUNC main_func[2][2];
     DWORD simd;
 } PMD_MT_FUNC;
@@ -36,6 +37,8 @@ void gaussianV_ssse3(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianV_sse41(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianV_avx(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2);
+
+void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 
 void pmd_mt(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2);

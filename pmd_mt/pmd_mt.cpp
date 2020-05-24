@@ -137,13 +137,14 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
 
     PIXEL_YC *ycp, *ycp2;
     PIXEL_YC *ycp_gauss = (PIXEL_YC *)param2;
+    PIXEL_YC *ycp_src = (fpip->ycp_temp == param2) ? fpip->ycp_edit : fpip->ycp_temp;
     const int w = fpip->w-2;
     const int max_w = fpip->max_w;
 
     //" 1 : 4 : 6 : 4 : 1 "の比率で横軸をぼかしていきます
     //端は条件判定をした方がソースがすっきりしますが、処理が遅くなるので強引に計算しています
     for (int y = y_start; y < y_end; y++) {
-        ycp  = fpip->ycp_temp + y*max_w;
+        ycp  = ycp_src + y*max_w;
         ycp2 = ycp_gauss + y*max_w;
         //左端
         ycp2->y  = (ycp[ 0].y  + (ycp[ 0].y <<2) + (ycp[0].y *6) + (ycp[1].y <<2) + ycp[2].y ) >> 4;
@@ -179,6 +180,7 @@ void gaussianV(int thread_id, int thread_num, void *param1, void *param2) {
 //処理内容は横軸とまったく同じです
 void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
+    PIXEL_YC *ycp_src = (fpip->ycp_temp == param2) ? fpip->ycp_edit : fpip->ycp_temp;
     PIXEL_YC *ycp_buf = (PIXEL_YC *)param2;
     int y_start = (fpip->h * thread_id    ) / thread_num;
     int y_end   = (fpip->h * (thread_id+1)) / thread_num;
@@ -189,7 +191,7 @@ void gaussianH(int thread_id, int thread_num, void *param1, void *param2) {
     const int max_w = fpip->max_w;
 
     for (int x = 0; x < w; x++) {
-        ycp  = fpip->ycp_edit + x + y_start*max_w;
+        ycp  = ycp_src + x + y_start*max_w;
         gref = ycp_buf + x + y_start*max_w;
 
         int y = y_start;
@@ -441,6 +443,10 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
         make_table(strength, threshold, useExp, useCPMD);
     }
 
+#if 0
+    fp->exfunc->exec_multi_thread_func(func->gaussianHV, (void *)fpip, (void *)fpip->ycp_temp);
+    SWAP(PIXEL_YC *, fpip->ycp_edit, fpip->ycp_temp);
+#else
     //修正PMD法ならばガウスぼかしをおこなう
     if (useCPMD) {
         if (NULL == gauss) {
@@ -451,16 +457,22 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
         //横軸のガウスぼかし、続けて縦軸のガウスぼかしをマルチスレッドで呼び出す
         //横軸の処理を完全に終えてから縦軸の処理をしなければならないので、メインの関数をマルチスレッドで呼び出してそこから縦軸横軸と分岐するのではなく、一つ一つマルチスレッドで呼び出します
         get_qp_counter(&pmd_qpc.tmp[2]);
-        fp->exfunc->exec_multi_thread_func(func->gaussianH, (void *)fpip, fpip->ycp_temp);
-        get_qp_counter(&pmd_qpc.tmp[3]);
-        fp->exfunc->exec_multi_thread_func(func->gaussianV, (void *)fpip, (void *)gauss);
-        get_qp_counter(&pmd_qpc.tmp[4]);
+        if (func->gaussianHV) {
+            fp->exfunc->exec_multi_thread_func(func->gaussianHV, (void *)fpip, (void *)gauss);
+            get_qp_counter(&pmd_qpc.tmp[3]);
+            get_qp_counter(&pmd_qpc.tmp[4]);
+        } else {
+            fp->exfunc->exec_multi_thread_func(func->gaussianV, (void *)fpip, fpip->ycp_temp);
+            get_qp_counter(&pmd_qpc.tmp[3]);
+            fp->exfunc->exec_multi_thread_func(func->gaussianH, (void *)fpip, (void *)gauss);
+            get_qp_counter(&pmd_qpc.tmp[4]);
+        }
         add_qpctime(&pmd_qpc.value[1], pmd_qpc.tmp[3] - pmd_qpc.tmp[2]);
         add_qpctime(&pmd_qpc.value[2], pmd_qpc.tmp[4] - pmd_qpc.tmp[3]);
-#if SIMD_DEBUG
+#if 0
         PIXEL_YC *debug = (PIXEL_YC *)malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC));
-        fp->exfunc->exec_multi_thread_func(gaussianH, (void *)fpip, fpip->ycp_temp);
-        fp->exfunc->exec_multi_thread_func(gaussianV, (void *)fpip, (void *)debug);
+        fp->exfunc->exec_multi_thread_func(gaussianV, (void *)fpip, fpip->ycp_temp);
+        fp->exfunc->exec_multi_thread_func(gaussianH, (void *)fpip, (void *)debug);
 
         int error = 0;
         for (int y = 0; y < fpip->h; y++) {
@@ -468,6 +480,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
             PIXEL_YC *g_ptr = gauss + y * fpip->max_w;
             for (int x = 0; x < fpip->w; x++, d_ptr++, g_ptr++) {
                 if (memcmp(d_ptr, g_ptr, sizeof(PIXEL_YC)))
+                //if (abs(d_ptr->y - g_ptr->y) > 1 || abs(d_ptr->cb - g_ptr->cb) > 1 || abs(d_ptr->cr - g_ptr->cr) > 1)
                     error++;
             }
         }
@@ -531,6 +544,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
             fclose(fp);
         }
     }
+#endif
 #endif
 
     return TRUE;
