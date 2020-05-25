@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include "filter.h"
 
@@ -39,6 +41,7 @@ void gaussianV_avx(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 
 void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2);
+void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2);
 
 void pmd_mt(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2);
@@ -50,6 +53,7 @@ void pmd_mt_avx(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_avx_fma3(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_avx_fma4(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_avx512(int thread_id, int thread_num, void *param1, void *param2);
 
 void pmd_mt_exp_sse2(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_ssse3(int thread_id, int thread_num, void *param1, void *param2);
@@ -57,6 +61,7 @@ void pmd_mt_exp_sse41(int thread_id, int thread_num, void *param1, void *param2)
 void pmd_mt_exp_avx(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2_gather(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_exp_avx512(int thread_id, int thread_num, void *param1, void *param2);
 
 void anisotropic_mt_sse2(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_ssse3(int thread_id, int thread_num, void *param1, void *param2);
@@ -65,6 +70,7 @@ void anisotropic_mt_avx(int thread_id, int thread_num, void *param1, void *param
 void anisotropic_mt_avx_fma3(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_avx_fma4(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2);
+void anisotropic_mt_avx512(int thread_id, int thread_num, void *param1, void *param2);
 
 void anisotropic_mt_exp_sse2(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_exp_ssse3(int thread_id, int thread_num, void *param1, void *param2);
@@ -72,6 +78,7 @@ void anisotropic_mt_exp_sse41(int thread_id, int thread_num, void *param1, void 
 void anisotropic_mt_exp_avx(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_exp_avx2_gather(int thread_id, int thread_num, void *param1, void *param2);
+void anisotropic_mt_exp_avx512(int thread_id, int thread_num, void *param1, void *param2);
 
 
 typedef struct {

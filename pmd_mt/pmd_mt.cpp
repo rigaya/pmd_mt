@@ -52,7 +52,7 @@ PIETRO PERONAさんとJITENDRA MALIKさんのアルゴリズム
 //        PMD_MT 高速化版 (rigaya)
 //----------------------------------------------------------------------------------
 //もともとのCによるコードに対し
-//SSE2 / SSSE3 / SSE4.1 / 128bit-AVX / 256bit-AVX / 256bit-AVX2 / 256bit-FMA3
+//SSE2 / SSSE3 / SSE4.1 / 128bit-AVX / 256bit-AVX / 256bit-AVX2 / 256bit-FMA3 / AVX512
 //などにより高速化しました。(イントリンシックを使用)
 //
 //自動的に使用可能な最速の関数が使用されるようになっています。
@@ -65,7 +65,10 @@ PIETRO PERONAさんとJITENDRA MALIKさんのアルゴリズム
 // useExp出ない時には、テーブル参照せずに重みを浮動小数点演算するように変更
 // ガウスぼかしをする際に毎回メモリ確保するのをやめて高速化
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
+#include <algorithm>
 #include <stdlib.h>    //mallocを使用するので
 #include <math.h>    //powを使用するので
 #include "filter.h"
@@ -252,7 +255,7 @@ void pmd_mt(int thread_id, int thread_num, void *param1, void *param2) {
     if (0 == y_start)
         memcpy(fpip->ycp_temp, fpip->ycp_edit, w * sizeof(PIXEL_YC));
 
-    for (int y = max(1, y_start); y < y_fin; y++) {
+    for (int y = std::max(1, y_start); y < y_fin; y++) {
         src  = fpip->ycp_edit + y*max_w +1;
         dst  = fpip->ycp_temp + y*max_w +1;
         gref = ycp_gauss      + y*max_w +1;
@@ -304,7 +307,7 @@ void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2) {
     if (0 == y_start)
         memcpy(fpip->ycp_temp, fpip->ycp_edit, w * sizeof(PIXEL_YC));
 
-    for (int y = max(1, y_start); y < y_fin; y++) {
+    for (int y = std::max(1, y_start); y < y_fin; y++) {
         src = fpip->ycp_edit + y*max_w +1;
         dst = fpip->ycp_temp + y*max_w +1;
 
@@ -469,7 +472,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
         }
         add_qpctime(&pmd_qpc.value[1], pmd_qpc.tmp[3] - pmd_qpc.tmp[2]);
         add_qpctime(&pmd_qpc.value[2], pmd_qpc.tmp[4] - pmd_qpc.tmp[3]);
-#if 0
+#if SIMD_DEBUG
         PIXEL_YC *debug = (PIXEL_YC *)malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC));
         fp->exfunc->exec_multi_thread_func(gaussianV, (void *)fpip, fpip->ycp_temp);
         fp->exfunc->exec_multi_thread_func(gaussianH, (void *)fpip, (void *)debug);

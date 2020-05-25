@@ -14,6 +14,7 @@
 #endif
 
 #include <cstdint>
+#include <algorithm>
 #include <cmath>
 #include "pmd_mt.h"
 #include "filter.h"
@@ -75,7 +76,7 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
     uint8_t *buf_top = (uint8_t *)ycp_buf + x_start * sizeof(PIXEL_YC);
 
     for (int pos_x = x_start; pos_x < x_fin; pos_x += analyze_block, src_top += analyze_block * sizeof(PIXEL_YC), buf_top += analyze_block * sizeof(PIXEL_YC)) {
-        analyze_block = min(x_fin - pos_x, max_block_size);
+        analyze_block = std::min(x_fin - pos_x, max_block_size);
         //一時領域にデータを満たす
         set_temp_buffer(0, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
         set_temp_buffer(1, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
@@ -84,7 +85,7 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 
         uint8_t *buf_line = buf_top;
         for (int y = 0; y < h; y++, buf_line += max_w * sizeof(PIXEL_YC)) {
-            uint8_t *src = src_top + min(y, h-3) * max_w * sizeof(PIXEL_YC);
+            uint8_t *src = src_top + std::min(y, h-3) * max_w * sizeof(PIXEL_YC);
             uint8_t *buf = buf_line;
             uint8_t *tmp = temp;
             for (int x = 0; x < analyze_block; x += 16, src += 96, buf += 96, tmp += 96) {
@@ -596,7 +597,7 @@ static __forceinline void smooth_vertical(char *buf_ptr, __m256i &yResultY, int 
 
 //line_sizeはpixel数x3
 template<int range, int line_size>
-void afs_eval_noise_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_pitch, int x_start, int x_fin, int y_start, int y_fin, int width, int height) {
+void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_pitch, int x_start, int x_fin, int y_start, int y_fin, int width, int height) {
     static_assert(0 < range && range <= 2, "0 < range && range <= 2");
     static_assert(((line_size/3) & ((line_size/3)-1)) == 0 && line_size % 3 == 0, "((line_size/3) & ((line_size/3)-1)) == 0 && line_size % 3 == 0");
     //最低限必要なバッファのライン数の決定、計算上2の乗数を使用する
@@ -734,8 +735,8 @@ void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2) 
     const int BLOCK_SIZE_YCP = 256;
     const int max_block_size = BLOCK_SIZE_YCP;
     const int min_analyze_cycle = 64;
-    const int scan_worker_x_limit_lower = min(thread_num, max(1, (w + BLOCK_SIZE_YCP - 1) / BLOCK_SIZE_YCP));
-    const int scan_worker_x_limit_upper = max(1, w / 64);
+    const int scan_worker_x_limit_lower = std::min(thread_num, std::max(1, (w + BLOCK_SIZE_YCP - 1) / BLOCK_SIZE_YCP));
+    const int scan_worker_x_limit_upper = std::max(1, w / 64);
     int scan_worker_x, scan_worker_y;
     for (int scan_worker_active = thread_num; ; scan_worker_active--) {
         for (scan_worker_x = scan_worker_x_limit_lower; scan_worker_x <= scan_worker_x_limit_upper; scan_worker_x++) {
@@ -761,18 +762,18 @@ void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2) 
     int analyze_block = BLOCK_SIZE_YCP;
     if (id_x < scan_worker_x - 1) {
         for (; pos_x < x_fin; pos_x += analyze_block) {
-            analyze_block = min(x_fin - pos_x, max_block_size);
-            afs_eval_noise_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            analyze_block = std::min(x_fin - pos_x, max_block_size);
+            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
     } else {
         for (; x_fin - pos_x > max_block_size; pos_x += analyze_block) {
-            analyze_block = min(x_fin - pos_x, max_block_size);
-            afs_eval_noise_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            analyze_block = std::min(x_fin - pos_x, max_block_size);
+            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
         if (pos_x < w) {
             analyze_block = ((w - pos_x) + (min_analyze_cycle - 1)) & ~(min_analyze_cycle - 1);
             pos_x = w - analyze_block;
-            afs_eval_noise_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
     }
 }

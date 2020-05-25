@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include <algorithm>
 #if USE_FMATH
 //ここではxbyakを使用しないほうが高速
 //#define FMATH_USE_XBYAK
@@ -65,7 +66,7 @@ static __forceinline void gaussianH_simd(int thread_id, int thread_num, void *pa
     uint8_t *buf_top = (uint8_t *)ycp_buf + x_start * sizeof(PIXEL_YC);
 
     for (int pos_x = x_start; pos_x < x_fin; pos_x += analyze_block, src_top += analyze_block * sizeof(PIXEL_YC), buf_top += analyze_block * sizeof(PIXEL_YC)) {
-        analyze_block = min(x_fin - pos_x, max_block_size);
+        analyze_block = std::min(x_fin - pos_x, max_block_size);
         //一時領域にデータを満たす
         set_temp_buffer(0, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
         set_temp_buffer(1, 0, src_top, temp, analyze_block, max_w, tmp_line_size);
@@ -74,7 +75,7 @@ static __forceinline void gaussianH_simd(int thread_id, int thread_num, void *pa
 
         uint8_t *buf_line = buf_top;
         for (int y = 0; y < h; y++, buf_line += max_w * sizeof(PIXEL_YC)) {
-            uint8_t *src = src_top + min(y, h-3) * max_w * sizeof(PIXEL_YC);
+            uint8_t *src = src_top + std::min(y, h-3) * max_w * sizeof(PIXEL_YC);
             uint8_t *buf = buf_line;
             uint8_t *tmp = temp;
             for (int x = 0; x < analyze_block; x += 8, src += 48, buf += 48, tmp += 48) {

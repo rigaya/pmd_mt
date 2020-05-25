@@ -45,6 +45,9 @@
     <ClCompile Include="pmd_mt_avx2_gather.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="pmd_mt_avx512.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="pmd_mt.def">
