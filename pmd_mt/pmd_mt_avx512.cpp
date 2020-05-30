@@ -112,43 +112,71 @@ static __forceinline void copy_bufline_avx512(void *dst, const void *src) {
     } while (n);
 }
 
-
+template<bool vbmi>
 static __forceinline void gather_y_u_v_to_yc48(__m512i& zY, __m512i& zU, __m512i& zV) {
     __m512i z0, z1, z2, zShuffle, zShuffleM21, zShuffleP21, zShuffleM42, zShuffleP10;
-#define i16x2(i) (((i)<<16)|(i))
-    static const int16_t OFFSET21[] = { 21, 21, 21, 21, 21, 21, 21, 21 };
-    static const int16_t OFFSET10[] = {
-        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-        10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 };
 
-    alignas(64) static const uint16_t shuffle_yc48[] = {
-        0, 32, 64,  1, 33, 65,  2, 34, 66,  3, 35, 67,  4, 36, 68,  5,
-       37, 69,  6, 38, 70,  7, 39, 71,  8, 40, 72,  9, 41, 73, 10, 42
-    };
-    __mmask32 mask1 = 0xDB6DB6DBu;
-    __mmask32 mask2 = 0xB6DB6DB6u;
-    zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48);
-    z0 = _mm512_mask_permutex2var_epi16(zY/*a*/, mask1, zShuffle/*idx*/, zU/*b*/);
-    z0 = _mm512_mask_permutexvar_epi16(z0/*src*/, ~mask1, zShuffle/*idx*/, zV);
+    if (vbmi) {
+        static const int8_t OFFSET42[] = {
+            42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42 };
+        static const int8_t OFFSET20[] = {
+            20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+            20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+            20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+            20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20 };
+        alignas(64) static const uint16_t shuffle_yc48_vbmi[] = {
+              0,   1,  64,  65, 128, 129,   2,   3,  66,  67, 130, 131,   4,   5,  68,  69, 132, 133,   6,   7,  70,  71, 134, 135,   8,   9,  72,  73, 136, 137,  10,  11,
+             74,  75, 138, 139,  12,  13,  76,  77, 140, 141,  14,  15,  78,  79, 142, 143,  16,  17,  80,  81, 144, 145,  18,  19,  82,  83, 146, 147,  20,  21,  84,  85
+        };
+        __mmask64 mask1 = 0xF3CF3CF3CF3CF3CF‬lu;
+        __mmask64 mask2 = 0xCF3CF3CF3CF3CF3C‬lu;
+        zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48_vbmi);
+        z0 = _mm512_mask_permutex2var_epi8(zY/*a*/, mask1, zShuffle/*idx*/, zU/*b*/);
+        z0 = _mm512_mask_permutexvar_epi8(z0/*src*/, ~mask1, zShuffle/*idx*/, zV);
 
-    zShuffleM21 = _mm512_sub_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
-    zShuffleP10 = _mm512_add_epi16(zShuffle, _mm512_load_si512((__m512i *)OFFSET10));
-    z1 = _mm512_mask_permutex2var_epi16(zY/*a*/, mask2, zShuffleM21/*idx*/, zU/*b*/);
-    z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, ~mask2, zShuffleP10/*idx*/, zV);
+        zShuffleM21 = _mm512_sub_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        zShuffleP10 = _mm512_add_epi8(zShuffle, _mm512_load_si512((__m512i *)OFFSET20));
+        z1 = _mm512_mask_permutex2var_epi8(zY/*a*/, mask2, zShuffleM21/*idx*/, zU/*b*/);
+        z1 = _mm512_mask_permutexvar_epi8(z1/*src*/, ~mask2, zShuffleP10/*idx*/, zV);
 
-    zShuffleP21 = _mm512_add_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
-    zShuffleM42 = _mm512_sub_epi16(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
-    z2 = _mm512_mask_permutex2var_epi16(zU/*a*/, mask1, zShuffleP21/*idx*/, zV/*b*/);
-    z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, ~mask1, zShuffleM42/*idx*/, zY);
+        zShuffleP21 = _mm512_add_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        zShuffleM42 = _mm512_sub_epi8(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        z2 = _mm512_mask_permutex2var_epi8(zU/*a*/, mask1, zShuffleP21/*idx*/, zV/*b*/);
+        z2 = _mm512_mask_permutexvar_epi8(z2/*src*/, ~mask1, zShuffleM42/*idx*/, zY);
+    } else {
+        static const int16_t OFFSET21[] = { 21, 21, 21, 21, 21, 21, 21, 21 };
+        static const int16_t OFFSET10[] = {
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 };
+        alignas(64) static const uint16_t shuffle_yc48[] = {
+            0, 32, 64,  1, 33, 65,  2, 34, 66,  3, 35, 67,  4, 36, 68,  5,
+           37, 69,  6, 38, 70,  7, 39, 71,  8, 40, 72,  9, 41, 73, 10, 42
+        };
+        __mmask32 mask1 = 0xDB6DB6DBu;
+        __mmask32 mask2 = 0xB6DB6DB6u;
+        zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48);
+        z0 = _mm512_mask_permutex2var_epi16(zY/*a*/, mask1, zShuffle/*idx*/, zU/*b*/);
+        z0 = _mm512_mask_permutexvar_epi16(z0/*src*/, ~mask1, zShuffle/*idx*/, zV);
+
+        zShuffleM21 = _mm512_sub_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        zShuffleP10 = _mm512_add_epi16(zShuffle, _mm512_load_si512((__m512i *)OFFSET10));
+        z1 = _mm512_mask_permutex2var_epi16(zY/*a*/, mask2, zShuffleM21/*idx*/, zU/*b*/);
+        z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, ~mask2, zShuffleP10/*idx*/, zV);
+
+        zShuffleP21 = _mm512_add_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        zShuffleM42 = _mm512_sub_epi16(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        z2 = _mm512_mask_permutex2var_epi16(zU/*a*/, mask1, zShuffleP21/*idx*/, zV/*b*/);
+        z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, ~mask1, zShuffleM42/*idx*/, zY);
+    }
 
     zY = z0;
     zU = z1;
     zV = z2;
-#undef i16x2
 }
 
+template<bool vbmi>
 static __forceinline void store_y_u_v_to_yc48(char *ptr, __m512i zY, __m512i zU, __m512i zV, bool store_per_pix, int n) {
-    gather_y_u_v_to_yc48(zY, zU, zV);
+    gather_y_u_v_to_yc48<vbmi>(zY, zU, zV);
     if (store_per_pix) {
         __mmask32 mask = (1 << n) - 1;
         _mm512_mask_storeu_epi16((__m512i *)(ptr + 0), mask, zY);
@@ -161,37 +189,59 @@ static __forceinline void store_y_u_v_to_yc48(char *ptr, __m512i zY, __m512i zU,
     }
 }
 
-template<bool aligned>
+template<bool aligned, bool vbmi>
 void __forceinline afs_load_yc48(__m512i& y, __m512i& cb, __m512i& cr, const char *src) {
     alignas(64) static const uint16_t PACK_YC48_SHUFFLE_AVX512[32] = {
          0,  3,  6,  9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45,
         48, 51, 54, 57, 60, 63,  2,  5,  8, 11, 14, 17, 20, 23, 26, 29
     };
-    __m512i z0 = _mm512_load_si512((__m512i *)PACK_YC48_SHUFFLE_AVX512);
+    alignas(64) static const int8_t PACK_YC48_SHUFFLE_AVX512_VBMI[64] = {
+         0,   1,   6,   7,  12,  13,  18,  19,  24,  25,  30,  31, 36, 37, 42, 43, 48, 49, 54, 55, 60, 61, 66, 67, 72, 73, 78, 79, 84, 85, 90, 91,
+        96,  97, 102, 103, 108, 109, 114, 115, 120, 121, 126, 127,  4,  5, 10, 11, 16, 17, 22, 23, 28, 29, 34, 35, 40, 41, 46, 47, 52, 53, 58, 59
+    };
+    __m512i z0 = _mm512_load_si512(vbmi ? (__m512i *)PACK_YC48_SHUFFLE_AVX512_VBMI : (__m512i *)PACK_YC48_SHUFFLE_AVX512);
     __m512i z5 = (aligned) ? _mm512_load_si512((__m512i *)(src +   0)) : _mm512_loadu_si512((__m512i *)(src +   0));
     __m512i z4 = (aligned) ? _mm512_load_si512((__m512i *)(src +  64)) : _mm512_loadu_si512((__m512i *)(src +  64));
     __m512i z3 = (aligned) ? _mm512_load_si512((__m512i *)(src + 128)) : _mm512_loadu_si512((__m512i *)(src + 128));
 
     __m512i z1, z2;
     __m512i z6 = _mm512_ternarylogic_epi64(_mm512_setzero_si512(), _mm512_setzero_si512(), _mm512_setzero_si512(), 0xff);
+    if (vbmi) {
+        z6 = _mm512_add_epi8(z6, z6);
+        __mmask64 k7 = 0xFFFFF00000000000‬lu;
+        __mmask64 k6 = 0xFFFFFC0000000000lu;
 
-    __mmask32 k7 = 0xffc00000;
-    __mmask32 k6 = 0xffe00000;
+        z1 = z0;
+        z1 = _mm512_permutex2var_epi8(z5/*a*/, z1/*idx*/, z4/*b*/);
+        z1 = _mm512_mask_permutexvar_epi8(z1/*src*/, k7, z0/*idx*/, z3);
+        z0 = _mm512_sub_epi16(z0, z6);
 
-    z1 = z0;
-    z1 = _mm512_permutex2var_epi16(z5/*a*/, z1/*idx*/, z4/*b*/);
-    z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, k7, z0/*idx*/, z3);
-    z0 = _mm512_sub_epi16(z0, z6);
+        z2 = z0;
+        z2 = _mm512_permutex2var_epi8(z5/*a*/, z2/*idx*/, z4/*b*/);
+        z2 = _mm512_mask_permutexvar_epi8(z2/*src*/, k6, z0/*idx*/, z3);
+        z0 = _mm512_sub_epi16(z0, z6);
 
-    z2 = z0;
-    z2 = _mm512_permutex2var_epi16(z5/*a*/, z2/*idx*/, z4/*b*/);
-    z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, k6, z0/*idx*/, z3);
-    z0 = _mm512_sub_epi16(z0, z6);
+        z6 = z0;
+        z6 = _mm512_permutex2var_epi8(z5/*a*/, z6/*idx*/, z4/*b*/);
+        z6 = _mm512_mask_permutexvar_epi8(z6/*src*/, k6, z0/*idx*/, z3);
+    } else {
+        __mmask32 k7 = 0xffc00000;
+        __mmask32 k6 = 0xffe00000;
 
-    z6 = z0;
-    z6 = _mm512_permutex2var_epi16(z5/*a*/, z6/*idx*/, z4/*b*/);
-    z6 = _mm512_mask_permutexvar_epi16(z6/*src*/, k6, z0/*idx*/, z3);
+        z1 = z0;
+        z1 = _mm512_permutex2var_epi16(z5/*a*/, z1/*idx*/, z4/*b*/);
+        z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, k7, z0/*idx*/, z3);
+        z0 = _mm512_sub_epi16(z0, z6);
 
+        z2 = z0;
+        z2 = _mm512_permutex2var_epi16(z5/*a*/, z2/*idx*/, z4/*b*/);
+        z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, k6, z0/*idx*/, z3);
+        z0 = _mm512_sub_epi16(z0, z6);
+
+        z6 = z0;
+        z6 = _mm512_permutex2var_epi16(z5/*a*/, z6/*idx*/, z4/*b*/);
+        z6 = _mm512_mask_permutexvar_epi16(z6/*src*/, k6, z0/*idx*/, z3);
+    }
     y = z1;
     cb = z2;
     cr = z6;
