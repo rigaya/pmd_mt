@@ -453,7 +453,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
     //修正PMD法ならばガウスぼかしをおこなう
     if (useCPMD) {
         if (NULL == gauss) {
-            if (NULL == (gauss = (PIXEL_YC *)_aligned_malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC) + 32, 32)))
+            if (NULL == (gauss = (PIXEL_YC *)_aligned_malloc(fpip->max_w * fpip->max_h * sizeof(PIXEL_YC) + 64, 64)))
                 return TRUE;
         }
 
