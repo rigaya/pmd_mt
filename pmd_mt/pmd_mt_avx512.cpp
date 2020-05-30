@@ -7,10 +7,7 @@
 #define USE_FMA4  0
 #define USE_VPGATHER 1 //Haswellではvpgatherを使用したほうが遅い
 
-#if USE_FMATH
-//#define FMATH_USE_XBYAK
-#include <fmath.hpp>
-#endif
+#define USE_FMATH 0 //やはり表引きしたほうが速いので無効化
 
 #include <cstdint>
 #include <algorithm>
@@ -602,6 +599,43 @@ void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2
 //        修正PDMマルチスレッド関数
 //---------------------------------------------------------------------
 
+
+#if USE_FMATH
+__m512 __forceinline exp_ps512(__m512 z0) {
+    static const uint32_t exptable[5] = {
+        0x3f800000,
+        0x3effff12,
+        0x3e2aaa56,
+        0x3d2b89cc,
+        0x3c091331,
+    };
+#define BROADCAST512(ptr) _mm512_broadcastss_ps(_mm_castsi128_ps(_mm_cvtsi32_si128(*(int *)ptr)))
+#define expCoeff(x) BROADCAST512(&exptable[x])
+    static const float log2 = 0.6931471805599453f; //std::log(2.0f);
+    static const float log2_e = 1.4426950408889634f; //1.0f / log2
+    __m512 z1, z2;
+    // xは - 87.3 <= x <= 88.72
+    //static const float expMin = cvt(0xc2aeac50);
+    //static const float expMax = cvt(0x42b17218);
+    //z0 = _mm512_min_ps(z0, expMax);
+    //z0 = _mm512_max_ps(z0, expMin);
+    z0 = _mm512_mul_ps(z0, BROADCAST512(&log2_e));
+    z1 = _mm512_roundscale_ps(z0, 0); // n = round(x)
+    z0 = _mm512_sub_ps(z0, z1); // a
+    z0 = _mm512_mul_ps(z0, BROADCAST512(&log2));
+    z2 = expCoeff(4);
+    z2 = _mm512_fmadd_ps(z2, z0, expCoeff(3));
+    z2 = _mm512_fmadd_ps(z2, z0, expCoeff(2));
+    z2 = _mm512_fmadd_ps(z2, z0, expCoeff(1));
+    z2 = _mm512_fmadd_ps(z2, z0, expCoeff(0));
+    z2 = _mm512_fmadd_ps(z2, z0, expCoeff(0));
+    return _mm512_scalef_ps(z2, z1); // zm2 * 2^zm1
+#undef expCoeff
+#undef BROADCAST512
+}
+#endif //#if USE_FMATH
+
+
 static __forceinline void getDiff(uint8_t *src, int max_w, __m512i& xUpper, __m512i& xLower, __m512i& xLeft, __m512i& xRight) {
     __m512i zSrc0, zSrc1;
     zSrc0 = _mm512_loadu_si512((__m128i *)(src - sizeof(PIXEL_YC) +  0));
@@ -613,6 +647,18 @@ static __forceinline void getDiff(uint8_t *src, int max_w, __m512i& xUpper, __m5
     xLower = _mm512_sub_epi16(_mm512_loadu_si512((__m512i *)(src + max_w * sizeof(PIXEL_YC))), zSrc);
     xLeft  = _mm512_sub_epi16(zSrc0, zSrc);
     xRight = _mm512_sub_epi16(_mm512_alignr512_epi8<12>(zSrc1, zSrc0), zSrc);
+}
+
+
+template <bool use_stream>
+static __forceinline void pmd_mt_exp_avx512_line(uint8_t *dst, uint8_t *src, uint8_t *gau, int process_size_in_byte, int max_w, const __m512i &yPMDBufLimit, const int *pmdp) {
+    uint8_t *src_fin = src + process_size_in_byte;
+
+#if !USE_VPGATHER && !USE_FMATH
+    __declspec(align(64)) int16_t diffBuf[64];
+    __declspec(align(64)) int expBuf[64];
+#endif
+
 }
 
 static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, void *param1, void *param2) {
@@ -647,14 +693,15 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
     //最後の行はそのままコピー
     y_fin -= (h == y_fin);
 
-    uint8_t *src_line = (uint8_t *)(fpip->ycp_edit + y_start * max_w);
-    uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
-    uint8_t *gau_line = (uint8_t *)(gauss          + y_start * max_w);
-
 #if !USE_VPGATHER && !USE_FMATH
     __declspec(align(64)) int16_t diffBuf[64];
     __declspec(align(64)) int expBuf[64];
 #endif
+
+    uint8_t *src_line = (uint8_t *)(fpip->ycp_edit + y_start * max_w);
+    uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
+    uint8_t *gau_line = (uint8_t *)(gauss          + y_start * max_w);
+
     __m512i yPMDBufLimit = _mm512_set1_epi16(PMD_TABLE_SIZE-1);
 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC), gau_line += max_w * sizeof(PIXEL_YC)) {
@@ -666,12 +713,75 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
         //先端終端を処理する際に、getDiffがはみ出して読み込んでしまうが
         //最初と最後の行は別に処理するため、フレーム範囲外を読み込む心配はない
         //先端終端ピクセルは後から上書きコピーする
-        uint8_t *src_fin = src + w * sizeof(PIXEL_YC);
+        uint8_t *src_fin = src + w * sizeof(PIXEL_YC);;
         for ( ; src < src_fin; src += 64, dst += 64, gau += 64) {
             __m512i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
             __m512i yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff;
             getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
             getDiff(gau, max_w, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
+    #if USE_FMATH
+            __m512 yGUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauUpperDiff));
+            __m512 yGUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauUpperDiff));
+            __m512 yGLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauLowerDiff));
+            __m512 yGLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauLowerDiff));
+            __m512 yGLeftlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauLeftDiff));
+            __m512 yGLefthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauLeftDiff));
+            __m512 yGRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauRightDiff));
+            __m512 yGRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauRightDiff));
+
+            yGUpperlo = _mm512_mul_ps(yGUpperlo, yGUpperlo);
+            yGUpperhi = _mm512_mul_ps(yGUpperhi, yGUpperhi);
+            yGLowerlo = _mm512_mul_ps(yGLowerlo, yGLowerlo);
+            yGLowerhi = _mm512_mul_ps(yGLowerhi, yGLowerhi);
+            yGLeftlo = _mm512_mul_ps(yGLeftlo, yGLeftlo);
+            yGLefthi = _mm512_mul_ps(yGLefthi, yGLefthi);
+            yGRightlo = _mm512_mul_ps(yGRightlo, yGRightlo);
+            yGRighthi = _mm512_mul_ps(yGRighthi, yGRighthi);
+
+            yGUpperlo = _mm512_mul_ps(yGUpperlo, yMinusInvThreshold2);
+            yGUpperhi = _mm512_mul_ps(yGUpperhi, yMinusInvThreshold2);
+            yGLowerlo = _mm512_mul_ps(yGLowerlo, yMinusInvThreshold2);
+            yGLowerhi = _mm512_mul_ps(yGLowerhi, yMinusInvThreshold2);
+            yGLeftlo = _mm512_mul_ps(yGLeftlo, yMinusInvThreshold2);
+            yGLefthi = _mm512_mul_ps(yGLefthi, yMinusInvThreshold2);
+            yGRightlo = _mm512_mul_ps(yGRightlo, yMinusInvThreshold2);
+            yGRighthi = _mm512_mul_ps(yGRighthi, yMinusInvThreshold2);
+
+            yGUpperlo = exp_ps512(yGUpperlo);
+            yGUpperhi = exp_ps512(yGUpperhi);
+            yGLowerlo = exp_ps512(yGLowerlo);
+            yGLowerhi = exp_ps512(yGLowerhi);
+            yGLeftlo = exp_ps512(yGLeftlo);
+            yGLefthi = exp_ps512(yGLefthi);
+            yGRightlo = exp_ps512(yGRightlo);
+            yGRighthi = exp_ps512(yGRighthi);
+
+            yGUpperlo = _mm512_mul_ps(yGUpperlo, yTempStrength2);
+            yGUpperhi = _mm512_mul_ps(yGUpperhi, yTempStrength2);
+            yGLowerlo = _mm512_mul_ps(yGLowerlo, yTempStrength2);
+            yGLowerhi = _mm512_mul_ps(yGLowerhi, yTempStrength2);
+            yGLeftlo = _mm512_mul_ps(yGLeftlo, yTempStrength2);
+            yGLefthi = _mm512_mul_ps(yGLefthi, yTempStrength2);
+            yGRightlo = _mm512_mul_ps(yGRightlo, yTempStrength2);
+            yGRighthi = _mm512_mul_ps(yGRighthi, yTempStrength2);
+
+            __m512 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
+            yGUpperlo = _mm512_mul_ps(yGUpperlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcUpperDiff)));
+            yGUpperhi = _mm512_mul_ps(yGUpperhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcUpperDiff)));
+            yGLeftlo = _mm512_mul_ps(yGLeftlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLeftDiff)));
+            yGLefthi = _mm512_mul_ps(yGLefthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLeftDiff)));
+
+            yAddLo0 = _mm512_fmadd_ps(yGLowerlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLowerDiff)), yGUpperlo);
+            yAddHi0 = _mm512_fmadd_ps(yGLowerhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLowerDiff)), yGUpperhi);
+            yAddLo1 = _mm512_fmadd_ps(yGRightlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcRightDiff)), yGLeftlo);
+            yAddHi1 = _mm512_fmadd_ps(yGRighthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcRightDiff)), yGLefthi);
+
+            yAddLo0 = _mm512_add_ps(yAddLo0, yAddLo1);
+            yAddHi0 = _mm512_add_ps(yAddHi0, yAddHi1);
+
+            __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
+            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_cvtps_epi32(yAddLo0), _mm512_cvtps_epi32(yAddHi0))));
+    #else
             yGauUpperDiff = _mm512_abs_epi16(yGauUpperDiff);
             yGauLowerDiff = _mm512_abs_epi16(yGauLowerDiff);
             yGauLeftDiff  = _mm512_abs_epi16(yGauLeftDiff);
@@ -681,7 +791,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
             yGauLowerDiff = _mm512_min_epi16(yGauLowerDiff, yPMDBufLimit);
             yGauLeftDiff  = _mm512_min_epi16(yGauLeftDiff,  yPMDBufLimit);
             yGauRightDiff = _mm512_min_epi16(yGauRightDiff, yPMDBufLimit);
-#if USE_VPGATHER
+    #if USE_VPGATHER
             __m512i yEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauUpperDiff), pmdp, 4);
             __m512i yEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauUpperDiff), pmdp, 4);
             __m512i yELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLowerDiff), pmdp, 4);
@@ -690,7 +800,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
             __m512i yELefthi  = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLeftDiff),  pmdp, 4);
             __m512i yERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauRightDiff), pmdp, 4);
             __m512i yERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauRightDiff), pmdp, 4);
-#else
+    #else
             _mm512_store_si512((__m512i *)(diffBuf +  0), yGauUpperDiff);
             _mm512_store_si512((__m512i *)(diffBuf + 32), yGauLowerDiff);
             _mm512_store_si512((__m512i *)(diffBuf + 64), yGauLeftDiff);
@@ -723,7 +833,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
             __m512i yELefthi  = _mm512_load_si512((__m512i *)(expBuf +  80));
             __m512i yERightlo = _mm512_load_si512((__m512i *)(expBuf +  96));
             __m512i yERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
-#endif
+    #endif
             yEUpperlo = _mm512_mullo_epi32(yEUpperlo, cvtlo512_epi16_epi32(ySrcUpperDiff));
             yEUpperhi = _mm512_mullo_epi32(yEUpperhi, cvthi512_epi16_epi32(ySrcUpperDiff));
             yELowerlo = _mm512_mullo_epi32(yELowerlo, cvtlo512_epi16_epi32(ySrcLowerDiff));
@@ -745,7 +855,9 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
 
             __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
             _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_srai_epi32(yAddLo, 16), _mm512_srai_epi32(yAddHi, 16))));
+    #endif
         }
+
         //先端と終端をそのままコピー
         *(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
         *(PIXEL_YC *)(dst_line + (w-1) * sizeof(PIXEL_YC)) = *(PIXEL_YC *)(src_line + (w-1) * sizeof(PIXEL_YC));
@@ -812,6 +924,64 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
         for ( ; src < src_fin; src += 64, dst += 64) {
             __m512i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
             getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
+#if USE_FMATH
+            __m512 ySUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcUpperDiff));
+            __m512 ySUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcUpperDiff));
+            __m512 ySLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLowerDiff));
+            __m512 ySLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLowerDiff));
+            __m512 ySLeftlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLeftDiff));
+            __m512 ySLefthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLeftDiff));
+            __m512 ySRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcRightDiff));
+            __m512 ySRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcRightDiff));
+
+            __m512 yTUpperlo = _mm512_mul_ps(ySUpperlo, ySUpperlo);
+            __m512 yTUpperhi = _mm512_mul_ps(ySUpperhi, ySUpperhi);
+            __m512 yTLowerlo = _mm512_mul_ps(ySLowerlo, ySLowerlo);
+            __m512 yTLowerhi = _mm512_mul_ps(ySLowerhi, ySLowerhi);
+            __m512 yTLeftlo = _mm512_mul_ps(ySLeftlo, ySLeftlo);
+            __m512 yTLefthi = _mm512_mul_ps(ySLefthi, ySLefthi);
+            __m512 yTRightlo = _mm512_mul_ps(ySRightlo, ySRightlo);
+            __m512 yTRighthi = _mm512_mul_ps(ySRighthi, ySRighthi);
+
+            yTUpperlo = _mm512_mul_ps(ySUpperlo, yMinusInvThreshold2);
+            yTUpperhi = _mm512_mul_ps(ySUpperhi, yMinusInvThreshold2);
+            yTLowerlo = _mm512_mul_ps(ySLowerlo, yMinusInvThreshold2);
+            yTLowerhi = _mm512_mul_ps(ySLowerhi, yMinusInvThreshold2);
+            yTLeftlo = _mm512_mul_ps(ySLeftlo, yMinusInvThreshold2);
+            yTLefthi = _mm512_mul_ps(ySLefthi, yMinusInvThreshold2);
+            yTRightlo = _mm512_mul_ps(ySRightlo, yMinusInvThreshold2);
+            yTRighthi = _mm512_mul_ps(ySRighthi, yMinusInvThreshold2);
+
+            yTUpperlo = exp_ps512(yTUpperlo);
+            yTUpperhi = exp_ps512(yTUpperhi);
+            yTLowerlo = exp_ps512(yTLowerlo);
+            yTLowerhi = exp_ps512(yTLowerhi);
+            yTLeftlo = exp_ps512(yTLeftlo);
+            yTLefthi = exp_ps512(yTLefthi);
+            yTRightlo = exp_ps512(yTRightlo);
+            yTRighthi = exp_ps512(yTRighthi);
+
+            yTUpperlo = _mm512_mul_ps(zStrength2, yTUpperlo);
+            yTUpperhi = _mm512_mul_ps(zStrength2, yTUpperhi);
+            yTLowerlo = _mm512_mul_ps(zStrength2, yTLowerlo);
+            yTLowerhi = _mm512_mul_ps(zStrength2, yTLowerhi);
+            yTLeftlo = _mm512_mul_ps(zStrength2, yTLeftlo);
+            yTLefthi = _mm512_mul_ps(zStrength2, yTLefthi);
+            yTRightlo = _mm512_mul_ps(zStrength2, yTRightlo);
+            yTRighthi = _mm512_mul_ps(zStrength2, yTRighthi);
+
+            __m512 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
+            yAddLo0 = _mm512_fmadd_ps(ySLowerlo, yTLowerlo, _mm512_mul_ps(ySUpperlo, yTUpperlo));
+            yAddHi0 = _mm512_fmadd_ps(ySLowerhi, yTLowerhi, _mm512_mul_ps(ySUpperhi, yTUpperhi));
+            yAddLo1 = _mm512_fmadd_ps(ySRightlo, yTRightlo, _mm512_mul_ps(ySLeftlo, yTLeftlo));
+            yAddHi1 = _mm512_fmadd_ps(ySRighthi, yTRighthi, _mm512_mul_ps(ySLefthi, yTLefthi));
+
+            yAddLo0 = _mm512_add_ps(yAddLo0, yAddLo1);
+            yAddHi0 = _mm512_add_ps(yAddHi0, yAddHi1);
+
+            __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
+            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_cvtps_epi32(yAddLo0), _mm512_cvtps_epi32(yAddHi0))));
+#else
             ySrcUpperDiff = _mm512_max_epi16(ySrcUpperDiff, yPMDBufMinLimit);
             ySrcLowerDiff = _mm512_max_epi16(ySrcLowerDiff, yPMDBufMinLimit);
             ySrcLeftDiff  = _mm512_max_epi16(ySrcLeftDiff,  yPMDBufMinLimit);
@@ -876,6 +1046,7 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
 
             __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
             _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(yAddLo, yAddHi)));
+#endif
         }
         //先端と終端をそのままコピー
         *(PIXEL_YC *)dst_line = *(PIXEL_YC *)src_line;
@@ -887,11 +1058,6 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
     }
     _mm256_zeroupper();
 }
-
-
-
-
-
 
 template <bool use_stream>
 static __forceinline void pmd_mt_avx512_line(uint8_t *dst, uint8_t *src, uint8_t *gau, int process_size_in_byte, int max_w, const __m512& zInvThreshold2, const __m512& zStrength2, const __m512& zOnef) {
