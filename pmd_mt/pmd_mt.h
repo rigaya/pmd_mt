@@ -42,6 +42,7 @@ void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 
 void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2);
+void gaussianHV_avx512vbmi(int thread_id, int thread_num, void *param1, void *param2);
 
 void pmd_mt(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2);
