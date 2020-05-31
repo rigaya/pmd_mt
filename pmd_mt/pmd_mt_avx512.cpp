@@ -72,7 +72,7 @@ static __forceinline __m512i cvthi512_epi16_epi32(__m512i z0) {
 static __forceinline __m512i gaussian_1_4_6_4_1(__m512i z0, __m512i z1, __m512i z2, const __m512i& z3, const __m512i& z4) {
     z0 = _mm512_adds_epi16(z0, z4);
     z1 = _mm512_adds_epi16(z1, z3);
-    static const int16_t MUL[] = {
+    alignas(16) static const int16_t MUL[] = {
         4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6,
         4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6 };
 
@@ -111,59 +111,97 @@ static __forceinline void copy_bufline_avx512(void *dst, const void *src) {
 
 template<bool vbmi>
 static __forceinline void gather_y_u_v_to_yc48(__m512i& zY, __m512i& zU, __m512i& zV) {
-    __m512i z0, z1, z2, zShuffle, zShuffleM21, zShuffleP21, zShuffleM42, zShuffleP10;
-
+    __m512i z0, z1, z2;
     if (vbmi) {
-        static const int8_t OFFSET42[] = {
-            42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42 };
-        static const int8_t OFFSET20[] = {
+        alignas(64) static const uint8_t shuffle_yc48_vbmi[] = {
+              0,   1,  64,  65, 128, 129,   2,   3,  66,  67, 130, 131,   4,   5,  68,  69, 132, 133,   6,   7,  70,  71, 134, 135,   8,   9,  72,  73, 136, 137,  10,  11,
+             74,  75, 138, 139,  12,  13,  76,  77, 140, 141,  14,  15,  78,  79, 142, 143,  16,  17,  80,  81, 144, 145,  18,  19,  82,  83, 146, 147,  20,  21,  84,  85
+        };
+        alignas(64) static const int8_t OFFSET20[] = {
             20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
             20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
             20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
             20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20 };
-        alignas(64) static const uint16_t shuffle_yc48_vbmi[] = {
-              0,   1,  64,  65, 128, 129,   2,   3,  66,  67, 130, 131,   4,   5,  68,  69, 132, 133,   6,   7,  70,  71, 134, 135,   8,   9,  72,  73, 136, 137,  10,  11,
-             74,  75, 138, 139,  12,  13,  76,  77, 140, 141,  14,  15,  78,  79, 142, 143,  16,  17,  80,  81, 144, 145,  18,  19,  82,  83, 146, 147,  20,  21,  84,  85
-        };
-        __mmask64 mask1 = 0xF3CF3CF3CF3CF3CF‬lu;
-        __mmask64 mask2 = 0xCF3CF3CF3CF3CF3C‬lu;
-        zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48_vbmi);
+        alignas(16) static const int8_t OFFSET42[] = {
+            42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42 };
+        __m512i zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48_vbmi);
+#if 0
+        __mmask64 mask1 = _cvtu64_mask64(0xF3CF3CF3CF3CF3CF);
+        __mmask64 mask2 = _cvtu64_mask64(0xCF3CF3CF3CF3CF3C);
+        __mmask64 mask1not = _knot_mask64(mask1);
+        __mmask64 mask2not = _knot_mask64(mask2);
         z0 = _mm512_mask_permutex2var_epi8(zY/*a*/, mask1, zShuffle/*idx*/, zU/*b*/);
-        z0 = _mm512_mask_permutexvar_epi8(z0/*src*/, ~mask1, zShuffle/*idx*/, zV);
+        z0 = _mm512_mask_permutexvar_epi8(z0/*src*/, mask1not, zShuffle/*idx*/, zV);
 
-        zShuffleM21 = _mm512_sub_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
-        zShuffleP10 = _mm512_add_epi8(zShuffle, _mm512_load_si512((__m512i *)OFFSET20));
-        z1 = _mm512_mask_permutex2var_epi8(zY/*a*/, mask2, zShuffleM21/*idx*/, zU/*b*/);
-        z1 = _mm512_mask_permutexvar_epi8(z1/*src*/, ~mask2, zShuffleP10/*idx*/, zV);
+        __m512i zShuffleM42 = _mm512_sub_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        __m512i zShuffleP20 = _mm512_add_epi8(zShuffle, _mm512_load_si512((__m512i *)OFFSET20));
+        z1 = _mm512_mask_permutex2var_epi8(zY/*a*/, mask2, zShuffleM42/*idx*/, zU/*b*/);
+        z1 = _mm512_mask_permutexvar_epi8(z1/*src*/, mask2not, zShuffleP20/*idx*/, zV);
 
-        zShuffleP21 = _mm512_add_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
-        zShuffleM42 = _mm512_sub_epi8(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
-        z2 = _mm512_mask_permutex2var_epi8(zU/*a*/, mask1, zShuffleP21/*idx*/, zV/*b*/);
-        z2 = _mm512_mask_permutexvar_epi8(z2/*src*/, ~mask1, zShuffleM42/*idx*/, zY);
+        __m512i zShuffleP42 = _mm512_add_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        __m512i zShuffleM84 = _mm512_sub_epi8(zShuffleM42, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        z2 = _mm512_mask_permutex2var_epi8(zU/*a*/, mask1, zShuffleP42/*idx*/, zV/*b*/);
+        z2 = _mm512_mask_permutexvar_epi8(z2/*src*/, mask1not, zShuffleM84/*idx*/, zY);
+#else
+        //clangの提案により、以下のほうが速そう
+        __mmask32 mask1 = 0xDB6DB6DBu;
+        __mmask32 mask2 = 0xB6DB6DB6u;
+        __mmask32 mask1not = ~mask1;
+        __mmask32 mask2not = ~mask2;
+        z0 = _mm512_permutex2var_epi8(zY/*a*/, zShuffle/*idx*/, zU/*b*/);
+        z0 = _mm512_mask_mov_epi16(z0, mask1not, _mm512_permutexvar_epi8(zShuffle/*idx*/, zV));
+
+        __m512i zShuffleM42 = _mm512_sub_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        __m512i zShuffleP20 = _mm512_add_epi8(zShuffle, _mm512_load_si512((__m512i *)OFFSET20));
+        z1 = _mm512_permutex2var_epi8(zY/*a*/, zShuffleM42/*idx*/, zU/*b*/);
+        z1 = _mm512_mask_mov_epi16(z1, mask2not, _mm512_permutexvar_epi8(zShuffleP20/*idx*/, zV));
+
+        __m512i zShuffleP42 = _mm512_add_epi8(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        __m512i zShuffleM84 = _mm512_sub_epi8(zShuffleM42, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET42)));
+        z2 = _mm512_permutex2var_epi8(zU/*a*/, zShuffleP42/*idx*/, zV/*b*/);
+        z2 = _mm512_mask_mov_epi16(z2, mask1not, _mm512_permutexvar_epi8(zShuffleM84/*idx*/, zY));
+#endif
     } else {
-        static const int16_t OFFSET21[] = { 21, 21, 21, 21, 21, 21, 21, 21 };
-        static const int16_t OFFSET10[] = {
-            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 };
         alignas(64) static const uint16_t shuffle_yc48[] = {
             0, 32, 64,  1, 33, 65,  2, 34, 66,  3, 35, 67,  4, 36, 68,  5,
            37, 69,  6, 38, 70,  7, 39, 71,  8, 40, 72,  9, 41, 73, 10, 42
         };
+        alignas(64) static const int16_t OFFSET10[] = {
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10 };
+        alignas(16) static const int16_t OFFSET21[] = { 21, 21, 21, 21, 21, 21, 21, 21 };
         __mmask32 mask1 = 0xDB6DB6DBu;
         __mmask32 mask2 = 0xB6DB6DB6u;
-        zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48);
+        __mmask32 mask1not = ~mask1;
+        __mmask32 mask2not = ~mask2;
+        __m512i zShuffle = _mm512_load_si512((__m512i *)shuffle_yc48);
+#if 0 //どちらでもあまり速度は変わらない
         z0 = _mm512_mask_permutex2var_epi16(zY/*a*/, mask1, zShuffle/*idx*/, zU/*b*/);
-        z0 = _mm512_mask_permutexvar_epi16(z0/*src*/, ~mask1, zShuffle/*idx*/, zV);
+        z0 = _mm512_mask_permutexvar_epi16(z0/*src*/, mask1not, zShuffle/*idx*/, zV);
 
-        zShuffleM21 = _mm512_sub_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
-        zShuffleP10 = _mm512_add_epi16(zShuffle, _mm512_load_si512((__m512i *)OFFSET10));
+        __m512i zShuffleM21 = _mm512_sub_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        __m512i zShuffleP10 = _mm512_add_epi16(zShuffle, _mm512_load_si512((__m512i *)OFFSET10));
         z1 = _mm512_mask_permutex2var_epi16(zY/*a*/, mask2, zShuffleM21/*idx*/, zU/*b*/);
-        z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, ~mask2, zShuffleP10/*idx*/, zV);
+        z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, mask2not, zShuffleP10/*idx*/, zV);
 
-        zShuffleP21 = _mm512_add_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
-        zShuffleM42 = _mm512_sub_epi16(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        __m512i zShuffleP21 = _mm512_add_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        __m512i zShuffleM42 = _mm512_sub_epi16(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
         z2 = _mm512_mask_permutex2var_epi16(zU/*a*/, mask1, zShuffleP21/*idx*/, zV/*b*/);
-        z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, ~mask1, zShuffleM42/*idx*/, zY);
+        z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, mask1not, zShuffleM42/*idx*/, zY);
+#else
+        z0 = _mm512_permutex2var_epi16(zY/*a*/, zShuffle/*idx*/, zU/*b*/);
+        z0 = _mm512_mask_mov_epi16(z0, mask1not, _mm512_permutexvar_epi16(zShuffle/*idx*/, zV));
+
+        __m512i zShuffleM21 = _mm512_sub_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        __m512i zShuffleP10 = _mm512_add_epi16(zShuffle, _mm512_load_si512((__m512i *)OFFSET10));
+        z1 = _mm512_permutex2var_epi16(zY/*a*/, zShuffleM21/*idx*/, zU/*b*/);
+        z1 = _mm512_mask_mov_epi16(z1, mask2not, _mm512_permutexvar_epi16(zShuffleP10/*idx*/, zV));
+
+        __m512i zShuffleP21 = _mm512_add_epi16(zShuffle, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        __m512i zShuffleM42 = _mm512_sub_epi16(zShuffleM21, _mm512_broadcast_i64x2(_mm_load_si128((const __m128i *)OFFSET21)));
+        z2 = _mm512_permutex2var_epi16(zU/*a*/, zShuffleP21/*idx*/, zV/*b*/);
+        z2 = _mm512_mask_mov_epi16(z2, mask1not, _mm512_permutexvar_epi16(zShuffleM42/*idx*/, zY));
+#endif
     }
 
     zY = z0;
@@ -192,7 +230,7 @@ void __forceinline afs_load_yc48(__m512i& y, __m512i& cb, __m512i& cr, const cha
          0,  3,  6,  9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45,
         48, 51, 54, 57, 60, 63,  2,  5,  8, 11, 14, 17, 20, 23, 26, 29
     };
-    alignas(64) static const int8_t PACK_YC48_SHUFFLE_AVX512_VBMI[64] = {
+    alignas(64) static const uint8_t PACK_YC48_SHUFFLE_AVX512_VBMI[64] = {
          0,   1,   6,   7,  12,  13,  18,  19,  24,  25,  30,  31, 36, 37, 42, 43, 48, 49, 54, 55, 60, 61, 66, 67, 72, 73, 78, 79, 84, 85, 90, 91,
         96,  97, 102, 103, 108, 109, 114, 115, 120, 121, 126, 127,  4,  5, 10, 11, 16, 17, 22, 23, 28, 29, 34, 35, 40, 41, 46, 47, 52, 53, 58, 59
     };
@@ -205,8 +243,9 @@ void __forceinline afs_load_yc48(__m512i& y, __m512i& cb, __m512i& cr, const cha
     __m512i z6 = _mm512_ternarylogic_epi64(_mm512_setzero_si512(), _mm512_setzero_si512(), _mm512_setzero_si512(), 0xff);
     if (vbmi) {
         z6 = _mm512_add_epi8(z6, z6);
-        __mmask64 k7 = 0xFFFFF00000000000‬lu;
-        __mmask64 k6 = 0xFFFFFC0000000000lu;
+#if 0
+        __mmask64 k6 = _cvtu64_mask64(0xFFFFFC0000000000);
+        __mmask64 k7 = _cvtu64_mask64(0xFFFFF00000000000);
 
         z1 = z0;
         z1 = _mm512_permutex2var_epi8(z5/*a*/, z1/*idx*/, z4/*b*/);
@@ -221,23 +260,53 @@ void __forceinline afs_load_yc48(__m512i& y, __m512i& cb, __m512i& cr, const cha
         z6 = z0;
         z6 = _mm512_permutex2var_epi8(z5/*a*/, z6/*idx*/, z4/*b*/);
         z6 = _mm512_mask_permutexvar_epi8(z6/*src*/, k6, z0/*idx*/, z3);
+#else
+        __mmask32 k7 = 0xffc00000;
+        __mmask32 k6 = 0xffe00000;
+
+        z1 = z0;
+        z1 = _mm512_permutex2var_epi8(z5/*a*/, z1/*idx*/, z4/*b*/);
+        z1 = _mm512_mask_mov_epi16(z1, k7, _mm512_permutexvar_epi8(z0/*idx*/, z3));
+        z0 = _mm512_sub_epi8(z0, z6);
+
+        z2 = z0;
+        z2 = _mm512_permutex2var_epi8(z5/*a*/, z2/*idx*/, z4/*b*/);
+        z2 = _mm512_mask_mov_epi16(z2, k6, _mm512_permutexvar_epi8(z0/*idx*/, z3));
+        z0 = _mm512_sub_epi8(z0, z6);
+
+        z6 = z0;
+        z6 = _mm512_permutex2var_epi8(z5/*a*/, z6/*idx*/, z4/*b*/);
+        z6 = _mm512_mask_mov_epi16(z6, k6, _mm512_permutexvar_epi8(z0/*idx*/, z3));
+#endif
     } else {
         __mmask32 k7 = 0xffc00000;
         __mmask32 k6 = 0xffe00000;
 
         z1 = z0;
         z1 = _mm512_permutex2var_epi16(z5/*a*/, z1/*idx*/, z4/*b*/);
+#if 1 //どちらでもあまり速度は変わらない
         z1 = _mm512_mask_permutexvar_epi16(z1/*src*/, k7, z0/*idx*/, z3);
+#else
+        z1 = _mm512_mask_mov_epi16(z1, k7, _mm512_permutexvar_epi16(z0/*idx*/, z3));
+#endif
         z0 = _mm512_sub_epi16(z0, z6);
 
         z2 = z0;
         z2 = _mm512_permutex2var_epi16(z5/*a*/, z2/*idx*/, z4/*b*/);
+#if 1 //どちらでもあまり速度は変わらない
         z2 = _mm512_mask_permutexvar_epi16(z2/*src*/, k6, z0/*idx*/, z3);
+#else
+        z1 = _mm512_mask_mov_epi16(z2, k6, _mm512_permutexvar_epi16(z0/*idx*/, z3));
+#endif
         z0 = _mm512_sub_epi16(z0, z6);
 
         z6 = z0;
         z6 = _mm512_permutex2var_epi16(z5/*a*/, z6/*idx*/, z4/*b*/);
+#if 1 //どちらでもあまり速度は変わらない
         z6 = _mm512_mask_permutexvar_epi16(z6/*src*/, k6, z0/*idx*/, z3);
+#else
+        z6 = _mm512_mask_mov_epi16(z6, k6, _mm512_permutexvar_epi16(z0/*idx*/, z3));
+#endif
     }
     y = z1;
     cb = z2;
@@ -342,7 +411,7 @@ static __forceinline __m512i smooth_horizontal(const __m512i &z0, const __m512i 
 
 //スムージングでは、まず水平方向の加算結果をバッファに格納していく
 //この関数は1ラインぶんの水平方向の加算 + バッファへの格納のみを行う
-template<int range>
+template<int range, bool vbmi>
 static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src_ptr, int x_start, int x_fin, int width, const __mmask32 &smooth_mask) {
     __m512i zY0, zU0, zV0;
     if (x_start == 0) {
@@ -352,15 +421,15 @@ static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src
         zV0 = _mm512_broadcastw_epi16(_mm_loadu_si16(&firstpix->cr));
     } else {
         src_ptr += x_start * sizeof(PIXEL_YC);
-        afs_load_yc48<false>(zY0, zU0, zV0, src_ptr - 192);
+        afs_load_yc48<false, vbmi>(zY0, zU0, zV0, src_ptr - 192);
     }
     //横方向のループ数は、AVX2(256bit)か128bitかによって異なる (logo_pitchとは異なる)
     const int x_fin_align = (((x_fin - x_start) + 31) & ~31) - 32;
     __m512i zY1, zU1, zV1;
-    afs_load_yc48<false>(zY1, zU1, zV1, src_ptr);
+    afs_load_yc48<false, vbmi>(zY1, zU1, zV1, src_ptr);
     __m512i zY2, zU2, zV2;
     for (int x = x_fin_align; x; x -= 32, src_ptr += 192, buf_ptr += 192) {
-        afs_load_yc48<false>(zY2, zU2, zV2, src_ptr + 192);
+        afs_load_yc48<false, vbmi>(zY2, zU2, zV2, src_ptr + 192);
         _mm512_storeu_si512((__m512i *)(buf_ptr +   0), smooth_horizontal<range>(zY0, zY1, zY2));
         _mm512_storeu_si512((__m512i *)(buf_ptr +  64), smooth_horizontal<range>(zU0, zU1, zU2));
         _mm512_storeu_si512((__m512i *)(buf_ptr + 128), smooth_horizontal<range>(zV0, zV1, zV2));
@@ -377,7 +446,7 @@ static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src
         zU1 = _mm512_mask_mov_epi16(zU2, smooth_mask, zU1);
         zV1 = _mm512_mask_mov_epi16(zV2, smooth_mask, zV1);
     } else {
-        afs_load_yc48<false>(zY2, zU2, zV2, src_ptr + 192);
+        afs_load_yc48<false, vbmi>(zY2, zU2, zV2, src_ptr + 192);
     }
     _mm512_storeu_si512((__m512i *)(buf_ptr +   0), smooth_horizontal<range>(zY0, zY1, zY2));
     _mm512_storeu_si512((__m512i *)(buf_ptr +  64), smooth_horizontal<range>(zU0, zU1, zU2));
@@ -472,7 +541,7 @@ static __forceinline void smooth_vertical(char *buf_ptr, __m512i& zResultY, __m5
 #pragma warning (pop)
 
 //line_sizeはpixel数x3
-template<int range, int line_size>
+template<int range, int line_size, bool vbmi>
 void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src_pitch, int x_start, int x_fin, int y_start, int y_fin, int width, int height) {
     static_assert(0 < range && range <= 2, "0 < range && range <= 2");
     static_assert(((line_size/3) & ((line_size/3)-1)) == 0 && line_size % 3 == 0, "((line_size/3) & ((line_size/3)-1)) == 0 && line_size % 3 == 0");
@@ -491,7 +560,7 @@ void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src
 
     //バッファのrange*2-1行目までを埋める (range*2行目はメインループ内でロードする)
     for (int i = (y_start == 0) ? 0 : -range; i < range; i++)
-        smooth_fill_buffer_yc48<range>((char *)(buffer + (i + range) * line_size), src + i * src_pitch, x_start, x_fin, width, smooth_mask);
+        smooth_fill_buffer_yc48<range, vbmi>((char *)(buffer + (i + range) * line_size), src + i * src_pitch, x_start, x_fin, width, smooth_mask);
 
     if (y_start == 0) {
         //range行目と同じものでバッファの1行目～range行目まで埋める
@@ -518,16 +587,16 @@ void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src
         } else {
             src_ptr += x_start * sizeof(PIXEL_YC);
             dst_ptr += x_start * sizeof(PIXEL_YC);
-            afs_load_yc48<false>(zY0, zU0, zV0, src_ptr + range_offset - 192);
+            afs_load_yc48<false, vbmi>(zY0, zU0, zV0, src_ptr + range_offset - 192);
         }
         __m512i zY1, zU1, zV1;
-        afs_load_yc48<false>(zY1, zU1, zV1, src_ptr + range_offset);
+        afs_load_yc48<false, vbmi>(zY1, zU1, zV1, src_ptr + range_offset);
 
         //横方向のループ数は、AVX2(256bit)か128bitかによって異なる (logo_pitchとは異なる)
         const int x_fin_align = (((x_fin - x_start) + 31) & ~31) - 32;
         for (int x = x_fin_align; x; x -= 32, src_ptr += 192, dst_ptr += 192, buf_ptr += 192) {
             __m512i zY2, zU2, zV2;
-            afs_load_yc48<false>(zY2, zU2, zV2, src_ptr + range_offset + 192);
+            afs_load_yc48<false, vbmi>(zY2, zU2, zV2, src_ptr + range_offset + 192);
             //連続するデータz0, z1, z2を使って水平方向の加算を行う
             __m512i zResultY = smooth_horizontal<range>(zY0, zY1, zY2);
             __m512i zResultU = smooth_horizontal<range>(zU0, zU1, zU2);
@@ -537,7 +606,7 @@ void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src
             //このループで得た水平加算結果はバッファに新たに格納される (不要になったものを上書き)
             smooth_vertical<range, buf_line, line_size>(buf_ptr, zResultY, zResultU, zResultV, y);
 
-            store_y_u_v_to_yc48(dst_ptr, zResultY, zResultU, zResultV, false, 32);
+            store_y_u_v_to_yc48<vbmi>(dst_ptr, zResultY, zResultU, zResultV, false, 32);
 
             zY0 = zY1; zY1 = zY2;
             zU0 = zU1; zU1 = zU2;
@@ -554,7 +623,7 @@ void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src
             zU1 = _mm512_mask_mov_epi16(zU2, smooth_mask, zU1);
             zV1 = _mm512_mask_mov_epi16(zV2, smooth_mask, zV1);
         } else {
-            afs_load_yc48<false>(zY2, zU2, zV2, src_ptr + range_offset + 192);
+            afs_load_yc48<false, vbmi>(zY2, zU2, zV2, src_ptr + range_offset + 192);
         }
 
         __m512i zResultY = smooth_horizontal<range>(zY0, zY1, zY2);
@@ -562,7 +631,7 @@ void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src
         __m512i zResultV = smooth_horizontal<range>(zV0, zV1, zV2);
         smooth_vertical<range, buf_line, line_size>(buf_ptr, zResultY, zResultU, zResultV, y);
 
-        store_y_u_v_to_yc48(dst_ptr, zResultY, zResultU, zResultV, store_per_pix_on_edge, (x_fin - x_start) & 31);
+        store_y_u_v_to_yc48<vbmi>(dst_ptr, zResultY, zResultU, zResultV, store_per_pix_on_edge, (x_fin - x_start) & 31);
     }
     if (y_fin >= height) {
         //先読みできる分が終了したら、あとはバッファから読み込んで処理する
@@ -578,19 +647,20 @@ void gaussHV_yc48_avx512_base(char *dst, int dst_pitch, const char *src, int src
                 __m512i zResultV = _mm512_load_si512((__m512i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 128));
                 smooth_vertical<range, buf_line, line_size>(buf_ptr, zResultY, zResultU, zResultV, y);
 
-                store_y_u_v_to_yc48(dst_ptr, zResultY, zResultU, zResultV, false, 32);
+                store_y_u_v_to_yc48<vbmi>(dst_ptr, zResultY, zResultU, zResultV, false, 32);
             }
             __m512i zResultY = _mm512_load_si512((__m512i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 0));
             __m512i zResultU = _mm512_load_si512((__m512i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 64));
             __m512i zResultV = _mm512_load_si512((__m512i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 128));
             smooth_vertical<range, buf_line, line_size>(buf_ptr, zResultY, zResultU, zResultV, y);
 
-            store_y_u_v_to_yc48(dst_ptr, zResultY, zResultU, zResultV, store_per_pix_on_edge, (x_fin - x_start) & 31);
+            store_y_u_v_to_yc48<vbmi>(dst_ptr, zResultY, zResultU, zResultV, store_per_pix_on_edge, (x_fin - x_start) & 31);
         }
     }
 }
 
-void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2) {
+template<bool vbmi>
+void gaussianHV_avx512_proc(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip = (FILTER_PROC_INFO *)param1;
     const int max_w = fpip->max_w;
     const int w = fpip->w;
@@ -630,19 +700,27 @@ void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2
     if (id_x < scan_worker_x - 1) {
         for (; pos_x < x_fin; pos_x += analyze_block) {
             analyze_block = std::min(x_fin - pos_x, max_block_size);
-            gaussHV_yc48_avx512_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx512_base<2, BLOCK_SIZE_YCP * 3, vbmi>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
     } else {
         for (; x_fin - pos_x > max_block_size; pos_x += analyze_block) {
             analyze_block = std::min(x_fin - pos_x, max_block_size);
-            gaussHV_yc48_avx512_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx512_base<2, BLOCK_SIZE_YCP * 3, vbmi>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
         if (pos_x < w) {
             analyze_block = ((w - pos_x) + (min_analyze_cycle - 1)) & ~(min_analyze_cycle - 1);
             pos_x = w - analyze_block;
-            gaussHV_yc48_avx512_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx512_base<2, BLOCK_SIZE_YCP * 3, vbmi>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
     }
+}
+
+void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2) {
+    gaussianHV_avx512_proc<false>(thread_id, thread_num, param1, param2);
+}
+
+void gaussianHV_avx512vbmi(int thread_id, int thread_num, void *param1, void *param2) {
+    gaussianHV_avx512_proc<true>(thread_id, thread_num, param1, param2);
 }
 
 //---------------------------------------------------------------------
