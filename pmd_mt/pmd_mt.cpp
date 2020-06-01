@@ -52,7 +52,7 @@ PIETRO PERONAさんとJITENDRA MALIKさんのアルゴリズム
 //        PMD_MT 高速化版 (rigaya)
 //----------------------------------------------------------------------------------
 //もともとのCによるコードに対し
-//SSE2 / SSSE3 / SSE4.1 / 128bit-AVX / 256bit-AVX / 256bit-AVX2 / 256bit-FMA3 / AVX512BW / AVX512VBMI
+//SSE2 / SSSE3 / SSE4.1 / 128bit-AVX / 256bit-AVX / 256bit-AVX2 / 256bit-FMA3 / AVX512BW / AVX512VBMI / AVX512VNNI
 //などにより高速化しました。(イントリンシックを使用)
 //
 //自動的に使用可能な最速の関数が使用されるようになっています。

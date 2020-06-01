@@ -42,7 +42,7 @@ void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 
 void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2);
-void gaussianHV_avx512vbmi(int thread_id, int thread_num, void *param1, void *param2);
+void gaussianHV_avx512vbmivnni(int thread_id, int thread_num, void *param1, void *param2);
 
 void pmd_mt(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt(int thread_id, int thread_num, void *param1, void *param2);
@@ -63,6 +63,7 @@ void pmd_mt_exp_avx(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2_gather(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx512(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_exp_avx512vnni(int thread_id, int thread_num, void *param1, void *param2);
 
 void anisotropic_mt_sse2(int thread_id, int thread_num, void *param1, void *param2);
 void anisotropic_mt_ssse3(int thread_id, int thread_num, void *param1, void *param2);
