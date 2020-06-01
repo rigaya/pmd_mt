@@ -962,6 +962,20 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
             __m512i yERightlo = _mm512_load_si512((__m512i *)(expBuf +  96));
             __m512i yERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
     #endif
+#if 1 //こちらの積算の少ないほうが高速
+            __mmask32 maskUpper = 0xAAAAAAAA;
+            __m512i yELULo = _mm512_mask_mov_epi16(yELowerlo, maskUpper, _mm512_slli_epi32(yEUpperlo, 16));
+            __m512i yELUHi = _mm512_mask_mov_epi16(yELowerhi, maskUpper, _mm512_slli_epi32(yEUpperhi, 16));
+            __m512i yERLLo = _mm512_mask_mov_epi16(yERightlo, maskUpper, _mm512_slli_epi32(yELeftlo, 16));
+            __m512i yERLHi = _mm512_mask_mov_epi16(yERighthi, maskUpper, _mm512_slli_epi32(yELefthi, 16));
+
+            __m512i yAddLo0 = _mm512_madd_epi16(yELULo, _mm512_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
+            __m512i yAddHi0 = _mm512_madd_epi16(yELUHi, _mm512_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+            __m512i yAddLo1 = _mm512_madd_epi16(yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+            __m512i yAddHi1 = _mm512_madd_epi16(yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+            __m512i yAddLo = _mm512_add_epi32(yAddLo0, yAddLo1);
+            __m512i yAddHi = _mm512_add_epi32(yAddHi0, yAddHi1);
+#else
             yEUpperlo = _mm512_mullo_epi32(yEUpperlo, cvtlo512_epi16_epi32(ySrcUpperDiff));
             yEUpperhi = _mm512_mullo_epi32(yEUpperhi, cvthi512_epi16_epi32(ySrcUpperDiff));
             yELowerlo = _mm512_mullo_epi32(yELowerlo, cvtlo512_epi16_epi32(ySrcLowerDiff));
@@ -980,6 +994,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
             yAddHi = _mm512_add_epi32(yAddHi, yELefthi);
             yAddLo = _mm512_add_epi32(yAddLo, yERightlo);
             yAddHi = _mm512_add_epi32(yAddHi, yERighthi);
+#endif
 
             __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
             _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_srai_epi32(yAddLo, 16), _mm512_srai_epi32(yAddHi, 16))));

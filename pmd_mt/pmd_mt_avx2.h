@@ -201,6 +201,19 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
             __m256i yERightlo = _mm256_load_si256((__m256i *)(expBuf + 48));
             __m256i yERighthi = _mm256_load_si256((__m256i *)(expBuf + 56));
 #endif
+#if 1 //こちらの積算の少ないほうが高速
+            __m256i yELULo = _mm256_blend_epi16(yELowerlo, _mm256_slli_epi32(yEUpperlo, 16), 0xAA);
+            __m256i yELUHi = _mm256_blend_epi16(yELowerhi, _mm256_slli_epi32(yEUpperhi, 16), 0xAA);
+            __m256i yERLLo = _mm256_blend_epi16(yERightlo, _mm256_slli_epi32(yELeftlo, 16),  0xAA);
+            __m256i yERLHi = _mm256_blend_epi16(yERighthi, _mm256_slli_epi32(yELefthi, 16),  0xAA);
+
+            __m256i yAddLo0 = _mm256_madd_epi16(yELULo, _mm256_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
+            __m256i yAddHi0 = _mm256_madd_epi16(yELUHi, _mm256_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+            __m256i yAddLo1 = _mm256_madd_epi16(yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+            __m256i yAddHi1 = _mm256_madd_epi16(yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+            __m256i yAddLo = _mm256_add_epi32(yAddLo0, yAddLo1);
+            __m256i yAddHi = _mm256_add_epi32(yAddHi0, yAddHi1);
+#else
             yEUpperlo = _mm256_mullo_epi32(yEUpperlo, cvtlo256_epi16_epi32(ySrcUpperDiff));
             yEUpperhi = _mm256_mullo_epi32(yEUpperhi, cvthi256_epi16_epi32(ySrcUpperDiff));
             yELowerlo = _mm256_mullo_epi32(yELowerlo, cvtlo256_epi16_epi32(ySrcLowerDiff));
@@ -219,6 +232,7 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
             yAddHi = _mm256_add_epi32(yAddHi, yELefthi);
             yAddLo = _mm256_add_epi32(yAddLo, yERightlo);
             yAddHi = _mm256_add_epi32(yAddHi, yERighthi);
+#endif
 
             __m256i ySrc = _mm256_loadu_si256((__m256i *)(src));
             _mm256_storeu_si256((__m256i *)(dst), _mm256_add_epi16(ySrc, _mm256_packs_epi32(_mm256_srai_epi32(yAddLo, 16), _mm256_srai_epi32(yAddHi, 16))));
