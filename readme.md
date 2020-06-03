@@ -37,6 +37,32 @@ PMD_MT 高速化版を使用したことによる、いかなる損害・トラ�
 
 - 修正PMD (デフォルト:ON)  
   ONで修正PMD法でノイズ除去を行います。OFFでPMD法で処理します。  
+  
+## pmd_mt.auf.iniによる設定
+
+pmd_mt.aufと同じフォルダに、下記のように記述したpmd_mt.auf.iniを置くと、使用するSIMD関数を選択できるように動作を変更できます。変更の際には、Aviutlの再起動が必要です。
+
+基本的にはテスト用です。
+
+使用されているSIMD関数群は自動フィールドシフト設定画面の上部に表示されます。
+
+```
+[PMD_MT]
+simd=auto
+large_page=0
+```
+
+|simd="?" |使用されるもの|対応環境の例|
+|:---|:---|:---|
+| auto           | 環境に合わせ自動選択        |                       |
+| avx512vbmi     | avx512vbmi+vnni             | Icelake               |
+| avx512bw       | avx512bw                    | Skylake-X             |
+| avx2           | avx2 (gather使用)           | Broadwell             |
+| avx2nogather   | avx2 (gather不使用)         | Haswell/Ryzen         | 
+| avx            | 128bit-AVX                  | SandyBridge/Bulldozer |
+| sse4.1         | SSE4.1                      | Penryn                |
+| ssse3          | SSSE3                       | Merom                 |
+| sse2           | SSE2                        |                       |
 
 
 ## ソースコードについて

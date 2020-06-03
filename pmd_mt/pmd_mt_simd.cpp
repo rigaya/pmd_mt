@@ -100,8 +100,30 @@ static const PMD_MT_FUNC FUNC_LIST[] = {
     { gaussianH,       gaussianV,       NULL,                      { { anisotropic_mt,            anisotropic_mt                 }, { pmd_mt,           pmd_mt                 } }, NONE },
 };
 
-const PMD_MT_FUNC *get_pmd_func_list() {
-    const DWORD simd_avail = get_availableSIMD();
+const PMD_MT_FUNC *get_pmd_func_list(const char *simd_select) {
+    DWORD simd_mask = 0xffffffff;
+    if (simd_select != nullptr && strncmp(simd_select, "auto", strlen("auto"))) {
+         if (strncmp(simd_select, "avx512vbmi", strlen("avx512vbmi")) == 0) {
+            simd_mask = AVX512VNNI|AVX512VBMI|AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
+        } else if (strncmp(simd_select, "avx512bw", strlen("avx512bw")) == 0) {
+            simd_mask = AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
+        } else if(strncmp(simd_select, "avx512", strlen("avx512")) == 0) {
+            simd_mask = AVX512VNNI | AVX512VBMI | AVX512BW | AVX512DQ | AVX512F | AVX2 | FMA3 | AVX | SSE41 | SSSE3 | SSE2 | POPCNT;
+        } if (strncmp(simd_select, "avx2nogather", strlen("avx2nogather")) == 0) {
+            simd_mask = AVX2 | FMA3 | AVX | SSE41 | SSSE3 | SSE2 | POPCNT;
+        } else if (strncmp(simd_select, "avx2", strlen("avx2")) == 0) {
+            simd_mask = FAST_GATHER|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
+        } else if (strncmp(simd_select, "avx", strlen("avx")) == 0) {
+            simd_mask = AVX | POPCNT | SSE41 | SSSE3 | SSE2;
+        } else if (strncmp(simd_select, "sse4.1", strlen("sse4.1")) == 0) {
+            simd_mask = SSE41 | SSSE3 | SSE2;
+        } else if (strncmp(simd_select, "ssse3", strlen("ssse3")) == 0) {
+            simd_mask = SSSE3 | SSE2;
+        } else {
+            simd_mask = SSE2;
+        }
+    }
+    const DWORD simd_avail = get_availableSIMD() & simd_mask;
     for (int i = 0; i < _countof(FUNC_LIST); i++) {
         if ((FUNC_LIST[i].simd & simd_avail) == FUNC_LIST[i].simd) {
             return &FUNC_LIST[i];
@@ -116,3 +138,14 @@ void avx2_dummy() {
     };
 }
 
+const char *simd_str(DWORD simd) {
+    if (simd & (AVX512VBMI|AVX512VNNI)) return "avx512vbmi+vnni";
+    if (simd & AVX512BW)   return "avx512bw";
+    if (simd & AVX512F)    return "avx512f";
+    if ((simd & (AVX2|FAST_GATHER)) == (AVX2|FAST_GATHER)) return "avx2+gather";
+    if (simd & AVX2)       return "avx2";
+    if (simd & AVX)        return "avx";
+    if (simd & SSE41)      return "sse4.1";
+    if (simd & SSSE3)      return "ssse3";
+    return "sse2";
+}

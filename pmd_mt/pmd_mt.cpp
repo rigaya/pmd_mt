@@ -381,6 +381,26 @@ void make_table(int strength, int threshold, int useExp, int cPMD) {
     }
     PMD_nzsize = nzsize;
 }
+
+//---------------------------------------------------------------------
+//        設定の取得
+//---------------------------------------------------------------------
+void get_simd_stg(FILTER *fp, char *buf, size_t bufsize) {
+    strcpy_s(buf, bufsize, "auto");
+    char auf_filepath[512];
+    GetModuleFileNameA(fp->dll_hinst, auf_filepath, sizeof(auf_filepath));
+    strcat_s(auf_filepath, ".ini");
+    GetPrivateProfileString("PMD_MT", "simd", "auto", buf, bufsize, auf_filepath);
+}
+
+//---------------------------------------------------------------------
+//        ウィンドウの初期化
+//---------------------------------------------------------------------
+static void init_dialog(HWND hwnd) {
+    char buf[256];
+    sprintf_s(buf, "PMD_MT (%s)", simd_str(func->simd));
+    SendMessage(hwnd, WM_SETTEXT, 0, (LPARAM)buf);
+}
 //---------------------------------------------------------------------
 //        設定ウィンドウにウィンドウメッセージが来た時に呼ばれる関数
 //---------------------------------------------------------------------
@@ -401,6 +421,9 @@ BOOL func_WndProc( HWND hwnd,UINT message,WPARAM wparam,LPARAM lparam,void *edit
                 }
             }
             break;
+        case WM_FILTER_INIT:
+            init_dialog(hwnd);
+            return TRUE;
         //終了時にメモリを開放
         case WM_FILTER_EXIT:
             if (PMD) {
@@ -429,7 +452,9 @@ BOOL func_update(FILTER *fp, int status) {
 //        開始時に呼ばれる関数
 //---------------------------------------------------------------------
 BOOL func_init(FILTER *fp) {
-    func = get_pmd_func_list();
+    char simd_slect[256] = { 0 };
+    get_simd_stg(fp, simd_slect, sizeof(simd_slect));
+    func = get_pmd_func_list(simd_slect);
 #if CHECK_PERFORMANCE
     QueryPerformanceFrequency((LARGE_INTEGER *)&pmd_qpc.freq);
 #endif
@@ -545,16 +570,16 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
 #if CHECK_PERFORMANCE
     pmd_qpc.frame_count++;
     if ((pmd_qpc.frame_count & 1023) == 0) {
-        FILE *fp = NULL;
-        if (0 == fopen_s(&fp, "pmd_mt_performance.csv", "a")) {
-            fprintf(fp, "%d,%lf,%lf,%lf,%lf\n",
+        FILE *fp_perf = NULL;
+        if (0 == fopen_s(&fp_perf, "pmd_mt_performance.csv", "a")) {
+            fprintf(fp_perf, "%d,%lf,%lf,%lf,%lf\n",
                 pmd_qpc.frame_count,
                 pmd_qpc.value[0] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count,
                 pmd_qpc.value[1] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count,
                 pmd_qpc.value[2] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count,
                 pmd_qpc.value[3] * 1000.0 / (double)pmd_qpc.freq / pmd_qpc.frame_count);
 
-            fclose(fp);
+            fclose(fp_perf);
         }
     }
 #endif

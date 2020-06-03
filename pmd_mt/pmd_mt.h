@@ -25,7 +25,8 @@ typedef struct PMD_MT_FUNC {
 
 static const int PMD_TABLE_SIZE = 4500;
 
-const PMD_MT_FUNC *get_pmd_func_list();
+const PMD_MT_FUNC *get_pmd_func_list(const char *simd_select);
+const char *simd_str(DWORD simd);
 
 void gaussianH(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianH_sse2(int thread_id, int thread_num, void *param1, void *param2);
