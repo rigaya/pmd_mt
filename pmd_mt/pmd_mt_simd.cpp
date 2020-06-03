@@ -108,9 +108,9 @@ const PMD_MT_FUNC *get_pmd_func_list(const char *simd_select) {
         } else if (strncmp(simd_select, "avx512bw", strlen("avx512bw")) == 0) {
             simd_mask = AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
         } else if(strncmp(simd_select, "avx512", strlen("avx512")) == 0) {
-            simd_mask = AVX512VNNI | AVX512VBMI | AVX512BW | AVX512DQ | AVX512F | AVX2 | FMA3 | AVX | SSE41 | SSSE3 | SSE2 | POPCNT;
-        } if (strncmp(simd_select, "avx2nogather", strlen("avx2nogather")) == 0) {
-            simd_mask = AVX2 | FMA3 | AVX | SSE41 | SSSE3 | SSE2 | POPCNT;
+            simd_mask = AVX512VNNI|AVX512VBMI|AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
+        } else if (strncmp(simd_select, "avx2nogather", strlen("avx2nogather")) == 0) {
+            simd_mask = AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
         } else if (strncmp(simd_select, "avx2", strlen("avx2")) == 0) {
             simd_mask = FAST_GATHER|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
         } else if (strncmp(simd_select, "avx", strlen("avx")) == 0) {
