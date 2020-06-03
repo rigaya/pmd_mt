@@ -86,6 +86,17 @@ static DWORD get_availableSIMD() {
     return simd;
 }
 
+static bool isAMD() {
+    int CPUInfo[4];
+    __cpuid(CPUInfo, 0);
+    char vendor[16] = { 0 };
+    memcpy(vendor + 0, &CPUInfo[1], sizeof(CPUInfo[1]));
+    memcpy(vendor + 4, &CPUInfo[3], sizeof(CPUInfo[3]));
+    memcpy(vendor + 8, &CPUInfo[2], sizeof(CPUInfo[2]));
+    //if (strcmp(vendor, "GenuineIntel") == 0) {
+    return strcmp(vendor, "AuthenticAMD") == 0;
+}
+
 static const PMD_MT_FUNC FUNC_LIST[] = {
     { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx512vbmivnni, { { anisotropic_mt_avx512,     anisotropic_mt_exp_avx512      }, { pmd_mt_avx512,    pmd_mt_exp_avx512vnni  } }, AVX512VNNI|AVX512VBMI|AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX },
     { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx512,         { { anisotropic_mt_avx512,     anisotropic_mt_exp_avx512      }, { pmd_mt_avx512,    pmd_mt_exp_avx512      } }, AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX },
@@ -121,6 +132,10 @@ const PMD_MT_FUNC *get_pmd_func_list(const char *simd_select) {
             simd_mask = SSSE3 | SSE2;
         } else {
             simd_mask = SSE2;
+        }
+    } else {
+        if (isAMD()) {
+            simd_mask &= (~FAST_GATHER);
         }
     }
     const DWORD simd_avail = get_availableSIMD() & simd_mask;
