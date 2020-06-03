@@ -796,7 +796,126 @@ static __forceinline void pmd_mt_exp_avx512_line(uint8_t *dst, uint8_t *src, uin
 
 }
 
-template<bool avx512vnni>
+#pragma warning(push)
+#pragma warning(disable: 4127) // C4127: 条件式が定数です。
+template<int pmdc>
+static __forceinline void lut_pmdp16(const int16_t *pmdp16, __m512i& z0, __m512i &z1, __m512i &z2, __m512i &z3) {
+    if (pmdc <= 1) {
+        __m512i zpmdp16_0 = _mm512_load_si512((__m512i *)(pmdp16 +  0));
+        __m512i zpmdp16_1 = _mm512_load_si512((__m512i *)(pmdp16 + 32));
+        z0 = _mm512_permutex2var_epi16(zpmdp16_0, z0, zpmdp16_1);
+        z1 = _mm512_permutex2var_epi16(zpmdp16_0, z1, zpmdp16_1);
+        z2 = _mm512_permutex2var_epi16(zpmdp16_0, z2, zpmdp16_1);
+        z3 = _mm512_permutex2var_epi16(zpmdp16_0, z3, zpmdp16_1);
+    } else if (pmdc <= 2) {
+        __m512i zpmdp16_0 = _mm512_load_si512((__m512i *)(pmdp16 +  0));
+        __m512i zpmdp16_1 = _mm512_load_si512((__m512i *)(pmdp16 + 32));
+        __mmask32 m0 = _mm512_cmplt_epi16_mask(z0, _mm512_set1_epi16(64));
+        __mmask32 m1 = _mm512_cmplt_epi16_mask(z1, _mm512_set1_epi16(64));
+        __mmask32 m2 = _mm512_cmplt_epi16_mask(z2, _mm512_set1_epi16(64));
+        __mmask32 m3 = _mm512_cmplt_epi16_mask(z3, _mm512_set1_epi16(64));
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z0, m0, zpmdp16_1);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z1, m1, zpmdp16_1);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z2, m2, zpmdp16_1);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z3, m3, zpmdp16_1);
+        __m512i zpmdp16_2 = _mm512_load_si512((__m512i *)(pmdp16 + 64));
+        __m512i zpmdp16_3 = _mm512_load_si512((__m512i *)(pmdp16 + 96));
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z0, _knot_mask32(m0), zpmdp16_3);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z1, _knot_mask32(m1), zpmdp16_3);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z2, _knot_mask32(m2), zpmdp16_3);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z3, _knot_mask32(m3), zpmdp16_3);
+    } else if (pmdc <= 3) {
+        __m512i zpmdp16_0 = _mm512_load_si512((__m512i *)(pmdp16 +  0));
+        __m512i zpmdp16_1 = _mm512_load_si512((__m512i *)(pmdp16 + 32));
+        __mmask32 m00 = _mm512_cmplt_epi16_mask(z0, _mm512_set1_epi16(64));
+        __mmask32 m10 = _mm512_cmplt_epi16_mask(z1, _mm512_set1_epi16(64));
+        __mmask32 m20 = _mm512_cmplt_epi16_mask(z2, _mm512_set1_epi16(64));
+        __mmask32 m30 = _mm512_cmplt_epi16_mask(z3, _mm512_set1_epi16(64));
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z0, m00, zpmdp16_1);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z1, m10, zpmdp16_1);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z2, m20, zpmdp16_1);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z3, m30, zpmdp16_1);
+        __m512i zpmdp16_2 = _mm512_load_si512((__m512i *)(pmdp16 + 64));
+        __m512i zpmdp16_3 = _mm512_load_si512((__m512i *)(pmdp16 + 96));
+        __mmask32 m01 = _mm512_cmplt_epi16_mask(z0, _mm512_set1_epi16(128));
+        __mmask32 m11 = _mm512_cmplt_epi16_mask(z1, _mm512_set1_epi16(128));
+        __mmask32 m21 = _mm512_cmplt_epi16_mask(z2, _mm512_set1_epi16(128));
+        __mmask32 m31 = _mm512_cmplt_epi16_mask(z3, _mm512_set1_epi16(128));
+        m01 = _kandn_mask32(m00, m01);
+        m11 = _kandn_mask32(m10, m11);
+        m21 = _kandn_mask32(m20, m21);
+        m31 = _kandn_mask32(m30, m31);
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z0, m01, zpmdp16_3);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z1, m11, zpmdp16_3);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z2, m21, zpmdp16_3);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z3, m31, zpmdp16_3);
+        __m512i zpmdp16_4 = _mm512_load_si512((__m512i *)(pmdp16 + 128));
+        __m512i zpmdp16_5 = _mm512_load_si512((__m512i *)(pmdp16 + 160));
+        m01 = _kor_mask32(m01, m00);
+        m11 = _kor_mask32(m11, m10);
+        m21 = _kor_mask32(m21, m20);
+        m31 = _kor_mask32(m31, m30);
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z0, _knot_mask32(m01), zpmdp16_5);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z1, _knot_mask32(m11), zpmdp16_5);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z2, _knot_mask32(m21), zpmdp16_5);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z3, _knot_mask32(m31), zpmdp16_5);
+    } else if (pmdc <= 4) {
+        __m512i zpmdp16_0 = _mm512_load_si512((__m512i *)(pmdp16 +  0));
+        __m512i zpmdp16_1 = _mm512_load_si512((__m512i *)(pmdp16 + 32));
+        __mmask32 m00 = _mm512_cmplt_epi16_mask(z0, _mm512_set1_epi16(64));
+        __mmask32 m10 = _mm512_cmplt_epi16_mask(z1, _mm512_set1_epi16(64));
+        __mmask32 m20 = _mm512_cmplt_epi16_mask(z2, _mm512_set1_epi16(64));
+        __mmask32 m30 = _mm512_cmplt_epi16_mask(z3, _mm512_set1_epi16(64));
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z0, m00, zpmdp16_1);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z1, m10, zpmdp16_1);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z2, m20, zpmdp16_1);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_0, z3, m30, zpmdp16_1);
+        __m512i zpmdp16_2 = _mm512_load_si512((__m512i *)(pmdp16 + 64));
+        __m512i zpmdp16_3 = _mm512_load_si512((__m512i *)(pmdp16 + 96));
+        __mmask32 m01 = _mm512_cmplt_epi16_mask(z0, _mm512_set1_epi16(128));
+        __mmask32 m11 = _mm512_cmplt_epi16_mask(z1, _mm512_set1_epi16(128));
+        __mmask32 m21 = _mm512_cmplt_epi16_mask(z2, _mm512_set1_epi16(128));
+        __mmask32 m31 = _mm512_cmplt_epi16_mask(z3, _mm512_set1_epi16(128));
+        m01 = _kandn_mask32(m00, m01);
+        m11 = _kandn_mask32(m10, m11);
+        m21 = _kandn_mask32(m20, m21);
+        m31 = _kandn_mask32(m30, m31);
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z0, m01, zpmdp16_3);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z1, m11, zpmdp16_3);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z2, m21, zpmdp16_3);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_2, z3, m31, zpmdp16_3);
+        __m512i zpmdp16_4 = _mm512_load_si512((__m512i *)(pmdp16 + 128));
+        __m512i zpmdp16_5 = _mm512_load_si512((__m512i *)(pmdp16 + 160));
+        m01 = _kor_mask32(m01, m00);
+        m11 = _kor_mask32(m11, m10);
+        m21 = _kor_mask32(m21, m20);
+        m31 = _kor_mask32(m31, m30);
+        __mmask32 m02 = _mm512_cmplt_epi16_mask(z0, _mm512_set1_epi16(192));
+        __mmask32 m12 = _mm512_cmplt_epi16_mask(z1, _mm512_set1_epi16(192));
+        __mmask32 m22 = _mm512_cmplt_epi16_mask(z2, _mm512_set1_epi16(192));
+        __mmask32 m32 = _mm512_cmplt_epi16_mask(z3, _mm512_set1_epi16(192));
+        m02 = _kandn_mask32(m01, m02);
+        m12 = _kandn_mask32(m11, m12);
+        m22 = _kandn_mask32(m21, m22);
+        m32 = _kandn_mask32(m31, m32);
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z0, m02, zpmdp16_5);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z1, m12, zpmdp16_5);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z2, m22, zpmdp16_5);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_4, z3, m32, zpmdp16_5);
+        __m512i zpmdp16_6 = _mm512_load_si512((__m512i *)(pmdp16 + 192));
+        __m512i zpmdp16_7 = _mm512_load_si512((__m512i *)(pmdp16 + 224));
+        m02 = _kor_mask32(m02, m01);
+        m12 = _kor_mask32(m12, m11);
+        m22 = _kor_mask32(m22, m21);
+        m32 = _kor_mask32(m32, m31);
+        z0 = _mm512_mask2_permutex2var_epi16(zpmdp16_6, z0, _knot_mask32(m02), zpmdp16_7);
+        z1 = _mm512_mask2_permutex2var_epi16(zpmdp16_6, z1, _knot_mask32(m12), zpmdp16_7);
+        z2 = _mm512_mask2_permutex2var_epi16(zpmdp16_6, z2, _knot_mask32(m22), zpmdp16_7);
+        z3 = _mm512_mask2_permutex2var_epi16(zpmdp16_6, z3, _knot_mask32(m32), zpmdp16_7);
+    }
+}
+
+template<bool avx512vnni, int pmdc>
 static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
     PIXEL_YC *gauss    = ((PMD_MT_PRM *)param2)->gauss;
@@ -820,6 +939,19 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
 #else
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
 #endif
+    __declspec(align(64)) int16_t pmdp16[(pmdc > 4) ? 1 : pmdc*64];
+    if (pmdc <= 4) {
+        for (int i = 0; i < pmdc; i++) {
+            __m256i y0 = _mm512_cvtepi32_epi16(_mm512_loadu_si512((__m512i *)(pmdp + i*64 +  0)));
+            __m256i y1 = _mm512_cvtepi32_epi16(_mm512_loadu_si512((__m512i *)(pmdp + i*64 + 16)));
+            __m256i y2 = _mm512_cvtepi32_epi16(_mm512_loadu_si512((__m512i *)(pmdp + i*64 + 32)));
+            __m256i y3 = _mm512_cvtepi32_epi16(_mm512_loadu_si512((__m512i *)(pmdp + i*64 + 48)));
+            _mm256_store_si256((__m256i *)(pmdp16 + i*64 +  0), y0);
+            _mm256_store_si256((__m256i *)(pmdp16 + i*64 + 16), y1);
+            _mm256_store_si256((__m256i *)(pmdp16 + i*64 + 32), y2);
+            _mm256_store_si256((__m256i *)(pmdp16 + i*64 + 48), y3);
+        }
+    }
 
     //最初の行はそのままコピー
     if (0 == y_start) {
@@ -838,7 +970,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
     uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
     uint8_t *gau_line = (uint8_t *)(gauss          + y_start * max_w);
 
-    __m512i yPMDBufLimit = _mm512_set1_epi16(PMD_TABLE_SIZE-1);
+    __m512i yPMDBufLimit = _mm512_set1_epi16((pmdc > 4) ? (PMD_TABLE_SIZE-1) : (pmdc*64-1));
 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC), gau_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
@@ -927,87 +1059,110 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
             yGauLowerDiff = _mm512_min_epi16(yGauLowerDiff, yPMDBufLimit);
             yGauLeftDiff  = _mm512_min_epi16(yGauLeftDiff,  yPMDBufLimit);
             yGauRightDiff = _mm512_min_epi16(yGauRightDiff, yPMDBufLimit);
-    #if USE_VPGATHER
-            __m512i yEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauUpperDiff), pmdp, 4);
-            __m512i yEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauUpperDiff), pmdp, 4);
-            __m512i yELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLowerDiff), pmdp, 4);
-            __m512i yELowerhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLowerDiff), pmdp, 4);
-            __m512i yELeftlo  = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLeftDiff),  pmdp, 4);
-            __m512i yELefthi  = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLeftDiff),  pmdp, 4);
-            __m512i yERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauRightDiff), pmdp, 4);
-            __m512i yERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauRightDiff), pmdp, 4);
-    #else
-            _mm512_store_si512((__m512i *)(diffBuf +  0), yGauUpperDiff);
-            _mm512_store_si512((__m512i *)(diffBuf + 32), yGauLowerDiff);
-            _mm512_store_si512((__m512i *)(diffBuf + 64), yGauLeftDiff);
-            _mm512_store_si512((__m512i *)(diffBuf + 96), yGauRightDiff);
-
-            for (int i = 0; i < _countof(expBuf); i += 16) {
-                expBuf[i+ 0] = pmdp[diffBuf[i+ 0]];
-                expBuf[i+ 1] = pmdp[diffBuf[i+ 1]];
-                expBuf[i+ 2] = pmdp[diffBuf[i+ 2]];
-                expBuf[i+ 3] = pmdp[diffBuf[i+ 3]];
-                expBuf[i+ 4] = pmdp[diffBuf[i+ 8]];
-                expBuf[i+ 5] = pmdp[diffBuf[i+ 9]];
-                expBuf[i+ 6] = pmdp[diffBuf[i+10]];
-                expBuf[i+ 7] = pmdp[diffBuf[i+11]];
-                expBuf[i+ 8] = pmdp[diffBuf[i+ 4]];
-                expBuf[i+ 9] = pmdp[diffBuf[i+ 5]];
-                expBuf[i+10] = pmdp[diffBuf[i+ 6]];
-                expBuf[i+11] = pmdp[diffBuf[i+ 7]];
-                expBuf[i+12] = pmdp[diffBuf[i+12]];
-                expBuf[i+13] = pmdp[diffBuf[i+13]];
-                expBuf[i+14] = pmdp[diffBuf[i+14]];
-                expBuf[i+15] = pmdp[diffBuf[i+15]];
-            }
-
-            __m512i yEUpperlo = _mm512_load_si512((__m512i *)(expBuf +   0));
-            __m512i yEUpperhi = _mm512_load_si512((__m512i *)(expBuf +  16));
-            __m512i yELowerlo = _mm512_load_si512((__m512i *)(expBuf +  32));
-            __m512i yELowerhi = _mm512_load_si512((__m512i *)(expBuf +  48));
-            __m512i yELeftlo  = _mm512_load_si512((__m512i *)(expBuf +  64));
-            __m512i yELefthi  = _mm512_load_si512((__m512i *)(expBuf +  80));
-            __m512i yERightlo = _mm512_load_si512((__m512i *)(expBuf +  96));
-            __m512i yERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
-    #endif
-#if 1 //こちらの積算の少ないほうが高速
-            __mmask32 maskUpper = 0xAAAAAAAA;
-            __m512i yELULo = _mm512_mask_mov_epi16(yELowerlo, maskUpper, _mm512_slli_epi32(yEUpperlo, 16));
-            __m512i yELUHi = _mm512_mask_mov_epi16(yELowerhi, maskUpper, _mm512_slli_epi32(yEUpperhi, 16));
-            __m512i yERLLo = _mm512_mask_mov_epi16(yERightlo, maskUpper, _mm512_slli_epi32(yELeftlo, 16));
-            __m512i yERLHi = _mm512_mask_mov_epi16(yERighthi, maskUpper, _mm512_slli_epi32(yELefthi, 16));
-
-            __m512i yAddLo = _mm512_madd_epi16(yELULo, _mm512_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
-            __m512i yAddHi = _mm512_madd_epi16(yELUHi, _mm512_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
-            if (avx512vnni) {
-                yAddLo = _mm512_dpwssd_epi32(yAddLo, yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                yAddHi = _mm512_dpwssd_epi32(yAddHi, yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
-            } else {
-                __m512i yAddLo1 = _mm512_madd_epi16(yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                __m512i yAddHi1 = _mm512_madd_epi16(yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
-                yAddLo = _mm512_add_epi32(yAddLo, yAddLo1);
-                yAddHi = _mm512_add_epi32(yAddHi, yAddHi1);
-            }
-#else
-            yEUpperlo = _mm512_mullo_epi32(yEUpperlo, cvtlo512_epi16_epi32(ySrcUpperDiff));
-            yEUpperhi = _mm512_mullo_epi32(yEUpperhi, cvthi512_epi16_epi32(ySrcUpperDiff));
-            yELowerlo = _mm512_mullo_epi32(yELowerlo, cvtlo512_epi16_epi32(ySrcLowerDiff));
-            yELowerhi = _mm512_mullo_epi32(yELowerhi, cvthi512_epi16_epi32(ySrcLowerDiff));
-            yELeftlo  = _mm512_mullo_epi32(yELeftlo,  cvtlo512_epi16_epi32(ySrcLeftDiff));
-            yELefthi  = _mm512_mullo_epi32(yELefthi,  cvthi512_epi16_epi32(ySrcLeftDiff));
-            yERightlo = _mm512_mullo_epi32(yERightlo, cvtlo512_epi16_epi32(ySrcRightDiff));
-            yERighthi = _mm512_mullo_epi32(yERighthi, cvthi512_epi16_epi32(ySrcRightDiff));
 
             __m512i yAddLo, yAddHi;
-            yAddLo = yEUpperlo;
-            yAddHi = yEUpperhi;
-            yAddLo = _mm512_add_epi32(yAddLo, yELowerlo);
-            yAddHi = _mm512_add_epi32(yAddHi, yELowerhi);
-            yAddLo = _mm512_add_epi32(yAddLo, yELeftlo);
-            yAddHi = _mm512_add_epi32(yAddHi, yELefthi);
-            yAddLo = _mm512_add_epi32(yAddLo, yERightlo);
-            yAddHi = _mm512_add_epi32(yAddHi, yERighthi);
+            if (pmdc <= 4) {
+                lut_pmdp16<pmdc>(pmdp16, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
+
+                __m512i yELULo = _mm512_unpacklo_epi16(yGauLowerDiff, yGauUpperDiff);
+                __m512i yELUHi = _mm512_unpackhi_epi16(yGauLowerDiff, yGauUpperDiff);
+                __m512i yERLLo = _mm512_unpacklo_epi16(yGauRightDiff, yGauLeftDiff);
+                __m512i yERLHi = _mm512_unpackhi_epi16(yGauRightDiff, yGauLeftDiff);
+
+                yAddLo = _mm512_madd_epi16(yELULo, _mm512_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
+                yAddHi = _mm512_madd_epi16(yELUHi, _mm512_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+                if (avx512vnni) {
+                    yAddLo = _mm512_dpwssd_epi32(yAddLo, yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    yAddHi = _mm512_dpwssd_epi32(yAddHi, yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                } else {
+                    __m512i yAddLo1 = _mm512_madd_epi16(yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    __m512i yAddHi1 = _mm512_madd_epi16(yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    yAddLo = _mm512_add_epi32(yAddLo, yAddLo1);
+                    yAddHi = _mm512_add_epi32(yAddHi, yAddHi1);
+                }
+            } else {
+#if USE_VPGATHER
+
+                __m512i yEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauUpperDiff), pmdp, 4);
+                __m512i yEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauUpperDiff), pmdp, 4);
+                __m512i yELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLowerDiff), pmdp, 4);
+                __m512i yELowerhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLowerDiff), pmdp, 4);
+                __m512i yELeftlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLeftDiff), pmdp, 4);
+                __m512i yELefthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLeftDiff), pmdp, 4);
+                __m512i yERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauRightDiff), pmdp, 4);
+                __m512i yERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauRightDiff), pmdp, 4);
+#else
+                _mm512_store_si512((__m512i *)(diffBuf + 0), yGauUpperDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 32), yGauLowerDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 64), yGauLeftDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 96), yGauRightDiff);
+
+                for (int i = 0; i < _countof(expBuf); i += 16) {
+                    expBuf[i + 0] = pmdp[diffBuf[i + 0]];
+                    expBuf[i + 1] = pmdp[diffBuf[i + 1]];
+                    expBuf[i + 2] = pmdp[diffBuf[i + 2]];
+                    expBuf[i + 3] = pmdp[diffBuf[i + 3]];
+                    expBuf[i + 4] = pmdp[diffBuf[i + 8]];
+                    expBuf[i + 5] = pmdp[diffBuf[i + 9]];
+                    expBuf[i + 6] = pmdp[diffBuf[i + 10]];
+                    expBuf[i + 7] = pmdp[diffBuf[i + 11]];
+                    expBuf[i + 8] = pmdp[diffBuf[i + 4]];
+                    expBuf[i + 9] = pmdp[diffBuf[i + 5]];
+                    expBuf[i + 10] = pmdp[diffBuf[i + 6]];
+                    expBuf[i + 11] = pmdp[diffBuf[i + 7]];
+                    expBuf[i + 12] = pmdp[diffBuf[i + 12]];
+                    expBuf[i + 13] = pmdp[diffBuf[i + 13]];
+                    expBuf[i + 14] = pmdp[diffBuf[i + 14]];
+                    expBuf[i + 15] = pmdp[diffBuf[i + 15]];
+                }
+
+                __m512i yEUpperlo = _mm512_load_si512((__m512i *)(expBuf + 0));
+                __m512i yEUpperhi = _mm512_load_si512((__m512i *)(expBuf + 16));
+                __m512i yELowerlo = _mm512_load_si512((__m512i *)(expBuf + 32));
+                __m512i yELowerhi = _mm512_load_si512((__m512i *)(expBuf + 48));
+                __m512i yELeftlo = _mm512_load_si512((__m512i *)(expBuf + 64));
+                __m512i yELefthi = _mm512_load_si512((__m512i *)(expBuf + 80));
+                __m512i yERightlo = _mm512_load_si512((__m512i *)(expBuf + 96));
+                __m512i yERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
 #endif
+#if 1 //こちらの積算の少ないほうが高速
+                __mmask32 maskUpper = 0xAAAAAAAA;
+                __m512i yELULo = _mm512_mask_mov_epi16(yELowerlo, maskUpper, _mm512_slli_epi32(yEUpperlo, 16));
+                __m512i yELUHi = _mm512_mask_mov_epi16(yELowerhi, maskUpper, _mm512_slli_epi32(yEUpperhi, 16));
+                __m512i yERLLo = _mm512_mask_mov_epi16(yERightlo, maskUpper, _mm512_slli_epi32(yELeftlo, 16));
+                __m512i yERLHi = _mm512_mask_mov_epi16(yERighthi, maskUpper, _mm512_slli_epi32(yELefthi, 16));
+
+                yAddLo = _mm512_madd_epi16(yELULo, _mm512_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
+                yAddHi = _mm512_madd_epi16(yELUHi, _mm512_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+                if (avx512vnni) {
+                    yAddLo = _mm512_dpwssd_epi32(yAddLo, yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    yAddHi = _mm512_dpwssd_epi32(yAddHi, yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                } else {
+                    __m512i yAddLo1 = _mm512_madd_epi16(yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    __m512i yAddHi1 = _mm512_madd_epi16(yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    yAddLo = _mm512_add_epi32(yAddLo, yAddLo1);
+                    yAddHi = _mm512_add_epi32(yAddHi, yAddHi1);
+                }
+    #else
+                yEUpperlo = _mm512_mullo_epi32(yEUpperlo, cvtlo512_epi16_epi32(ySrcUpperDiff));
+                yEUpperhi = _mm512_mullo_epi32(yEUpperhi, cvthi512_epi16_epi32(ySrcUpperDiff));
+                yELowerlo = _mm512_mullo_epi32(yELowerlo, cvtlo512_epi16_epi32(ySrcLowerDiff));
+                yELowerhi = _mm512_mullo_epi32(yELowerhi, cvthi512_epi16_epi32(ySrcLowerDiff));
+                yELeftlo = _mm512_mullo_epi32(yELeftlo, cvtlo512_epi16_epi32(ySrcLeftDiff));
+                yELefthi = _mm512_mullo_epi32(yELefthi, cvthi512_epi16_epi32(ySrcLeftDiff));
+                yERightlo = _mm512_mullo_epi32(yERightlo, cvtlo512_epi16_epi32(ySrcRightDiff));
+                yERighthi = _mm512_mullo_epi32(yERighthi, cvthi512_epi16_epi32(ySrcRightDiff));
+
+                yAddLo = yEUpperlo;
+                yAddHi = yEUpperhi;
+                yAddLo = _mm512_add_epi32(yAddLo, yELowerlo);
+                yAddHi = _mm512_add_epi32(yAddHi, yELowerhi);
+                yAddLo = _mm512_add_epi32(yAddLo, yELeftlo);
+                yAddHi = _mm512_add_epi32(yAddHi, yELefthi);
+                yAddLo = _mm512_add_epi32(yAddLo, yERightlo);
+                yAddHi = _mm512_add_epi32(yAddHi, yERighthi);
+#endif
+            }
 
             __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
             _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_srai_epi32(yAddLo, 16), _mm512_srai_epi32(yAddHi, 16))));
@@ -1024,6 +1179,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
     }
     _mm256_zeroupper();
 }
+#pragma warning(pop)
 
 static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thread_num, void *param1, void *param2) {
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
@@ -1362,11 +1518,33 @@ void pmd_mt_avx512(int thread_id, int thread_num, void *param1, void *param2) {
 }
 
 void pmd_mt_exp_avx512(int thread_id, int thread_num, void *param1, void *param2) {
-    pmd_mt_exp_avx512_base<false>(thread_id, thread_num, param1, param2);
+    const int pmd_nzsize = ((PMD_MT_PRM *)param2)->nzsize;
+    if (pmd_nzsize < 63) {
+        pmd_mt_exp_avx512_base<false, 1>(thread_id, thread_num, param1, param2);
+    } else if (pmd_nzsize < 127) {
+        pmd_mt_exp_avx512_base<false, 2>(thread_id, thread_num, param1, param2);
+    } else if (pmd_nzsize < 191) {
+        pmd_mt_exp_avx512_base<false, 3>(thread_id, thread_num, param1, param2);
+    } else if (pmd_nzsize < 255) {
+        pmd_mt_exp_avx512_base<false, 4>(thread_id, thread_num, param1, param2);
+    } else {
+        pmd_mt_exp_avx512_base<false, 5>(thread_id, thread_num, param1, param2);
+    }
 }
 
 void pmd_mt_exp_avx512vnni(int thread_id, int thread_num, void *param1, void *param2) {
-    pmd_mt_exp_avx512_base<true>(thread_id, thread_num, param1, param2);
+    const int pmd_nzsize = ((PMD_MT_PRM *)param2)->nzsize;
+    if (pmd_nzsize < 63) {
+        pmd_mt_exp_avx512_base<true, 1>(thread_id, thread_num, param1, param2);
+    } else if (pmd_nzsize < 127) {
+        pmd_mt_exp_avx512_base<true, 2>(thread_id, thread_num, param1, param2);
+    } else if (pmd_nzsize < 191) {
+        pmd_mt_exp_avx512_base<true, 3>(thread_id, thread_num, param1, param2);
+    } else if (pmd_nzsize < 255) {
+        pmd_mt_exp_avx512_base<true, 4>(thread_id, thread_num, param1, param2);
+    } else {
+        pmd_mt_exp_avx512_base<true, 5>(thread_id, thread_num, param1, param2);
+    }
 }
 
 template <bool use_stream>

@@ -12,6 +12,7 @@ typedef struct PMD_MT_PRM {
     PIXEL_YC *gauss;
     int strength, threshold;
     int *pmd;
+    int nzsize;
 } PMD_MT_PRM;
 
 typedef struct PMD_MT_FUNC {

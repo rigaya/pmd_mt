@@ -82,6 +82,7 @@ PIETRO PERONAさんとJITENDRA MALIKさんのアルゴリズム
 //---------------------------------------------------------------------
 // Perona-Malik エッジ停止関数
 static int *PMD = NULL;
+static int PMD_nzsize = 0;
 static PIXEL_YC *gauss = NULL;
 static const PMD_MT_FUNC *func = NULL;
 static PERFORMANCE_CHECKER pmd_qpc = { 0 };
@@ -371,6 +372,14 @@ void make_table(int strength, int threshold, int useExp, int cPMD) {
             }
         }
     }
+    int nzsize = PMD_TABLE_SIZE;
+    for (int x = PMD_TABLE_SIZE; x >= 0; x--) {
+        if (PMD[x + PMD_TABLE_SIZE] != 0) {
+            nzsize = x;
+            break;
+        }
+    }
+    PMD_nzsize = nzsize;
 }
 //---------------------------------------------------------------------
 //        設定ウィンドウにウィンドウメッセージが来た時に呼ばれる関数
@@ -496,6 +505,7 @@ BOOL func_proc(FILTER *fp, FILTER_PROC_INFO *fpip) {
     for (int i = 0; i < fp->track[2]; i++) {
         PMD_MT_PRM prm;
         prm.pmd = PMD;
+        prm.nzsize = PMD_nzsize;
         prm.gauss = gauss;
         prm.strength = strength;
         prm.threshold = threshold;
