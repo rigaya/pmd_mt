@@ -49,7 +49,6 @@ pmd_mt.aufと同じフォルダに、下記のように記述したpmd_mt.auf.in
 ```
 [PMD_MT]
 simd=auto
-large_page=0
 ```
 
 |simd="?" |使用されるもの|対応環境の例|
