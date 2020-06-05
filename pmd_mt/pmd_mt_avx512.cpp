@@ -73,7 +73,7 @@ template<bool avx512vnni>
 static __forceinline __m512i gaussian_1_4_6_4_1(__m512i z0, __m512i z1, __m512i z2, const __m512i& z3, const __m512i& z4) {
     z0 = _mm512_adds_epi16(z0, z4);
     z1 = _mm512_adds_epi16(z1, z3);
-    alignas(16) static const int16_t MUL[] = {
+    alignas(64) static const int16_t MUL[] = {
         4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6,
         4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6 };
 
