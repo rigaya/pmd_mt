@@ -23,7 +23,8 @@ static void __forceinline memcpy_avx512(void *_dst, void *_src, int size) {
     uint8_t *dst = (uint8_t *)_dst;
     uint8_t *src = (uint8_t *)_src;
     if (size < 256) {
-        memcpy(dst, src, size);
+        for (int i = 0; i < size; i++)
+            dst[i] = src[i];
         return;
     }
     uint8_t *dst_fin = dst + size;
@@ -771,29 +772,17 @@ __m512 __forceinline exp_ps512(__m512 z0) {
 #endif //#if USE_FMATH
 
 
-static __forceinline void getDiff(uint8_t *src, int max_w, __m512i& xUpper, __m512i& xLower, __m512i& xLeft, __m512i& xRight) {
+static __forceinline void getDiff(uint8_t *src, int max_w, __m512i& zUpper, __m512i& zLower, __m512i& zLeft, __m512i& zRight) {
     __m512i zSrc0, zSrc1;
     zSrc0 = _mm512_loadu_si512((__m128i *)(src - sizeof(PIXEL_YC) +  0));
     zSrc1 = _mm512_castsi128_si512(_mm_loadu_si128((__m128i *)(src - sizeof(PIXEL_YC) + 64)));
 
     __m512i zSrc = _mm512_alignr512_epi8<6>(zSrc1, zSrc0);
 
-    xUpper = _mm512_sub_epi16(_mm512_loadu_si512((__m512i *)(src - max_w * sizeof(PIXEL_YC))), zSrc);
-    xLower = _mm512_sub_epi16(_mm512_loadu_si512((__m512i *)(src + max_w * sizeof(PIXEL_YC))), zSrc);
-    xLeft  = _mm512_sub_epi16(zSrc0, zSrc);
-    xRight = _mm512_sub_epi16(_mm512_alignr512_epi8<12>(zSrc1, zSrc0), zSrc);
-}
-
-
-template <bool use_stream>
-static __forceinline void pmd_mt_exp_avx512_line(uint8_t *dst, uint8_t *src, uint8_t *gau, int process_size_in_byte, int max_w, const __m512i &yPMDBufLimit, const int *pmdp) {
-    uint8_t *src_fin = src + process_size_in_byte;
-
-#if !USE_VPGATHER && !USE_FMATH
-    __declspec(align(64)) int16_t diffBuf[64];
-    __declspec(align(64)) int expBuf[64];
-#endif
-
+    zUpper = _mm512_sub_epi16(_mm512_loadu_si512((__m512i *)(src - max_w * sizeof(PIXEL_YC))), zSrc);
+    zLower = _mm512_sub_epi16(_mm512_loadu_si512((__m512i *)(src + max_w * sizeof(PIXEL_YC))), zSrc);
+    zLeft  = _mm512_sub_epi16(zSrc0, zSrc);
+    zRight = _mm512_sub_epi16(_mm512_alignr512_epi8<12>(zSrc1, zSrc0), zSrc);
 }
 
 #pragma warning(push)
@@ -930,8 +919,8 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
     //閾値の設定を変えた方が使いやすいです
     const float inv_threshold2 = (float)(1.0 / threshold2);
 
-    __m512 yTempStrength2 = _mm512_set1_ps(strength2 * (1.0f / range));
-    __m512 yMinusInvThreshold2 = _mm512_set1_ps(-1.0f * inv_threshold2);
+    __m512 zTempStrength2 = _mm512_set1_ps(strength2 * (1.0f / range));
+    __m512 zMinusInvThreshold2 = _mm512_set1_ps(-1.0f * inv_threshold2);
 #else
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
 #endif
@@ -966,7 +955,7 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
     uint8_t *dst_line = (uint8_t *)(fpip->ycp_temp + y_start * max_w);
     uint8_t *gau_line = (uint8_t *)(gauss          + y_start * max_w);
 
-    __m512i yPMDBufLimit = _mm512_set1_epi16((pmdc > 4) ? (PMD_TABLE_SIZE-1) : (pmdc*64-1));
+    __m512i zPMDBufLimit = _mm512_set1_epi16((pmdc > 4) ? (PMD_TABLE_SIZE-1) : (pmdc*64-1));
 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC), gau_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
@@ -979,119 +968,119 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
         //先端終端ピクセルは後から上書きコピーする
         uint8_t *src_fin = src + w * sizeof(PIXEL_YC);;
         for ( ; src < src_fin; src += 64, dst += 64, gau += 64) {
-            __m512i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
-            __m512i yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff;
-            getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
-            getDiff(gau, max_w, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
+            __m512i zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff;
+            __m512i zGauUpperDiff, zGauLowerDiff, zGauLeftDiff, zGauRightDiff;
+            getDiff(src, max_w, zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff);
+            getDiff(gau, max_w, zGauUpperDiff, zGauLowerDiff, zGauLeftDiff, zGauRightDiff);
     #if USE_FMATH
-            __m512 yGUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauUpperDiff));
-            __m512 yGUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauUpperDiff));
-            __m512 yGLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauLowerDiff));
-            __m512 yGLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauLowerDiff));
-            __m512 yGLeftlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauLeftDiff));
-            __m512 yGLefthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauLeftDiff));
-            __m512 yGRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauRightDiff));
-            __m512 yGRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauRightDiff));
+            __m512 zGUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauUpperDiff));
+            __m512 zGUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauUpperDiff));
+            __m512 zGLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauLowerDiff));
+            __m512 zGLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauLowerDiff));
+            __m512 zGLeftlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauLeftDiff));
+            __m512 zGLefthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauLeftDiff));
+            __m512 zGRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauRightDiff));
+            __m512 zGRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauRightDiff));
 
-            yGUpperlo = _mm512_mul_ps(yGUpperlo, yGUpperlo);
-            yGUpperhi = _mm512_mul_ps(yGUpperhi, yGUpperhi);
-            yGLowerlo = _mm512_mul_ps(yGLowerlo, yGLowerlo);
-            yGLowerhi = _mm512_mul_ps(yGLowerhi, yGLowerhi);
-            yGLeftlo = _mm512_mul_ps(yGLeftlo, yGLeftlo);
-            yGLefthi = _mm512_mul_ps(yGLefthi, yGLefthi);
-            yGRightlo = _mm512_mul_ps(yGRightlo, yGRightlo);
-            yGRighthi = _mm512_mul_ps(yGRighthi, yGRighthi);
+            zGUpperlo = _mm512_mul_ps(zGUpperlo, zGUpperlo);
+            zGUpperhi = _mm512_mul_ps(zGUpperhi, zGUpperhi);
+            zGLowerlo = _mm512_mul_ps(zGLowerlo, zGLowerlo);
+            zGLowerhi = _mm512_mul_ps(zGLowerhi, zGLowerhi);
+            zGLeftlo = _mm512_mul_ps(zGLeftlo, zGLeftlo);
+            zGLefthi = _mm512_mul_ps(zGLefthi, zGLefthi);
+            zGRightlo = _mm512_mul_ps(zGRightlo, zGRightlo);
+            zGRighthi = _mm512_mul_ps(zGRighthi, zGRighthi);
 
-            yGUpperlo = _mm512_mul_ps(yGUpperlo, yMinusInvThreshold2);
-            yGUpperhi = _mm512_mul_ps(yGUpperhi, yMinusInvThreshold2);
-            yGLowerlo = _mm512_mul_ps(yGLowerlo, yMinusInvThreshold2);
-            yGLowerhi = _mm512_mul_ps(yGLowerhi, yMinusInvThreshold2);
-            yGLeftlo = _mm512_mul_ps(yGLeftlo, yMinusInvThreshold2);
-            yGLefthi = _mm512_mul_ps(yGLefthi, yMinusInvThreshold2);
-            yGRightlo = _mm512_mul_ps(yGRightlo, yMinusInvThreshold2);
-            yGRighthi = _mm512_mul_ps(yGRighthi, yMinusInvThreshold2);
+            zGUpperlo = _mm512_mul_ps(zGUpperlo, zMinusInvThreshold2);
+            zGUpperhi = _mm512_mul_ps(zGUpperhi, zMinusInvThreshold2);
+            zGLowerlo = _mm512_mul_ps(zGLowerlo, zMinusInvThreshold2);
+            zGLowerhi = _mm512_mul_ps(zGLowerhi, zMinusInvThreshold2);
+            zGLeftlo = _mm512_mul_ps(zGLeftlo, zMinusInvThreshold2);
+            zGLefthi = _mm512_mul_ps(zGLefthi, zMinusInvThreshold2);
+            zGRightlo = _mm512_mul_ps(zGRightlo, zMinusInvThreshold2);
+            zGRighthi = _mm512_mul_ps(zGRighthi, zMinusInvThreshold2);
 
-            yGUpperlo = exp_ps512(yGUpperlo);
-            yGUpperhi = exp_ps512(yGUpperhi);
-            yGLowerlo = exp_ps512(yGLowerlo);
-            yGLowerhi = exp_ps512(yGLowerhi);
-            yGLeftlo = exp_ps512(yGLeftlo);
-            yGLefthi = exp_ps512(yGLefthi);
-            yGRightlo = exp_ps512(yGRightlo);
-            yGRighthi = exp_ps512(yGRighthi);
+            zGUpperlo = exp_ps512(zGUpperlo);
+            zGUpperhi = exp_ps512(zGUpperhi);
+            zGLowerlo = exp_ps512(zGLowerlo);
+            zGLowerhi = exp_ps512(zGLowerhi);
+            zGLeftlo = exp_ps512(zGLeftlo);
+            zGLefthi = exp_ps512(zGLefthi);
+            zGRightlo = exp_ps512(zGRightlo);
+            zGRighthi = exp_ps512(zGRighthi);
 
-            yGUpperlo = _mm512_mul_ps(yGUpperlo, yTempStrength2);
-            yGUpperhi = _mm512_mul_ps(yGUpperhi, yTempStrength2);
-            yGLowerlo = _mm512_mul_ps(yGLowerlo, yTempStrength2);
-            yGLowerhi = _mm512_mul_ps(yGLowerhi, yTempStrength2);
-            yGLeftlo = _mm512_mul_ps(yGLeftlo, yTempStrength2);
-            yGLefthi = _mm512_mul_ps(yGLefthi, yTempStrength2);
-            yGRightlo = _mm512_mul_ps(yGRightlo, yTempStrength2);
-            yGRighthi = _mm512_mul_ps(yGRighthi, yTempStrength2);
+            zGUpperlo = _mm512_mul_ps(zGUpperlo, zTempStrength2);
+            zGUpperhi = _mm512_mul_ps(zGUpperhi, zTempStrength2);
+            zGLowerlo = _mm512_mul_ps(zGLowerlo, zTempStrength2);
+            zGLowerhi = _mm512_mul_ps(zGLowerhi, zTempStrength2);
+            zGLeftlo = _mm512_mul_ps(zGLeftlo, zTempStrength2);
+            zGLefthi = _mm512_mul_ps(zGLefthi, zTempStrength2);
+            zGRightlo = _mm512_mul_ps(zGRightlo, zTempStrength2);
+            zGRighthi = _mm512_mul_ps(zGRighthi, zTempStrength2);
 
-            __m512 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
-            yGUpperlo = _mm512_mul_ps(yGUpperlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcUpperDiff)));
-            yGUpperhi = _mm512_mul_ps(yGUpperhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcUpperDiff)));
-            yGLeftlo = _mm512_mul_ps(yGLeftlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLeftDiff)));
-            yGLefthi = _mm512_mul_ps(yGLefthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLeftDiff)));
+            __m512 zAddLo0, zAddHi0, zAddLo1, zAddHi1;
+            zGUpperlo = _mm512_mul_ps(zGUpperlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcUpperDiff)));
+            zGUpperhi = _mm512_mul_ps(zGUpperhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcUpperDiff)));
+            zGLeftlo = _mm512_mul_ps(zGLeftlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLeftDiff)));
+            zGLefthi = _mm512_mul_ps(zGLefthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLeftDiff)));
 
-            yAddLo0 = _mm512_fmadd_ps(yGLowerlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLowerDiff)), yGUpperlo);
-            yAddHi0 = _mm512_fmadd_ps(yGLowerhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLowerDiff)), yGUpperhi);
-            yAddLo1 = _mm512_fmadd_ps(yGRightlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcRightDiff)), yGLeftlo);
-            yAddHi1 = _mm512_fmadd_ps(yGRighthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcRightDiff)), yGLefthi);
+            zAddLo0 = _mm512_fmadd_ps(zGLowerlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLowerDiff)), zGUpperlo);
+            zAddHi0 = _mm512_fmadd_ps(zGLowerhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLowerDiff)), zGUpperhi);
+            zAddLo1 = _mm512_fmadd_ps(zGRightlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcRightDiff)), zGLeftlo);
+            zAddHi1 = _mm512_fmadd_ps(zGRighthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcRightDiff)), zGLefthi);
 
-            yAddLo0 = _mm512_add_ps(yAddLo0, yAddLo1);
-            yAddHi0 = _mm512_add_ps(yAddHi0, yAddHi1);
+            zAddLo0 = _mm512_add_ps(zAddLo0, zAddLo1);
+            zAddHi0 = _mm512_add_ps(zAddHi0, zAddHi1);
 
-            __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
-            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_cvtps_epi32(yAddLo0), _mm512_cvtps_epi32(yAddHi0))));
+            __m512i zSrc = _mm512_loadu_si512((__m512i *)(src));
+            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(zSrc, _mm512_packs_epi32(_mm512_cvtps_epi32(zAddLo0), _mm512_cvtps_epi32(zAddHi0))));
     #else
-            yGauUpperDiff = _mm512_abs_epi16(yGauUpperDiff);
-            yGauLowerDiff = _mm512_abs_epi16(yGauLowerDiff);
-            yGauLeftDiff  = _mm512_abs_epi16(yGauLeftDiff);
-            yGauRightDiff = _mm512_abs_epi16(yGauRightDiff);
+            zGauUpperDiff = _mm512_abs_epi16(zGauUpperDiff);
+            zGauLowerDiff = _mm512_abs_epi16(zGauLowerDiff);
+            zGauLeftDiff  = _mm512_abs_epi16(zGauLeftDiff);
+            zGauRightDiff = _mm512_abs_epi16(zGauRightDiff);
 
-            yGauUpperDiff = _mm512_min_epi16(yGauUpperDiff, yPMDBufLimit);
-            yGauLowerDiff = _mm512_min_epi16(yGauLowerDiff, yPMDBufLimit);
-            yGauLeftDiff  = _mm512_min_epi16(yGauLeftDiff,  yPMDBufLimit);
-            yGauRightDiff = _mm512_min_epi16(yGauRightDiff, yPMDBufLimit);
+            zGauUpperDiff = _mm512_min_epi16(zGauUpperDiff, zPMDBufLimit);
+            zGauLowerDiff = _mm512_min_epi16(zGauLowerDiff, zPMDBufLimit);
+            zGauLeftDiff  = _mm512_min_epi16(zGauLeftDiff,  zPMDBufLimit);
+            zGauRightDiff = _mm512_min_epi16(zGauRightDiff, zPMDBufLimit);
 
-            __m512i yAddLo, yAddHi;
+            __m512i zAddLo, zAddHi;
             if (pmdc <= 4) {
-                lut_pmdp16<pmdc>(pmdp16, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
+                lut_pmdp16<pmdc>(pmdp16, zGauUpperDiff, zGauLowerDiff, zGauLeftDiff, zGauRightDiff);
 
-                __m512i yELULo = _mm512_unpacklo_epi16(yGauLowerDiff, yGauUpperDiff);
-                __m512i yELUHi = _mm512_unpackhi_epi16(yGauLowerDiff, yGauUpperDiff);
-                __m512i yERLLo = _mm512_unpacklo_epi16(yGauRightDiff, yGauLeftDiff);
-                __m512i yERLHi = _mm512_unpackhi_epi16(yGauRightDiff, yGauLeftDiff);
+                __m512i zELULo = _mm512_unpacklo_epi16(zGauLowerDiff, zGauUpperDiff);
+                __m512i zELUHi = _mm512_unpackhi_epi16(zGauLowerDiff, zGauUpperDiff);
+                __m512i zERLLo = _mm512_unpacklo_epi16(zGauRightDiff, zGauLeftDiff);
+                __m512i zERLHi = _mm512_unpackhi_epi16(zGauRightDiff, zGauLeftDiff);
 
-                yAddLo = _mm512_madd_epi16(yELULo, _mm512_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
-                yAddHi = _mm512_madd_epi16(yELUHi, _mm512_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+                zAddLo = _mm512_madd_epi16(zELULo, _mm512_unpacklo_epi16(zSrcLowerDiff, zSrcUpperDiff));
+                zAddHi = _mm512_madd_epi16(zELUHi, _mm512_unpackhi_epi16(zSrcLowerDiff, zSrcUpperDiff));
                 if (avx512vnni) {
-                    yAddLo = _mm512_dpwssd_epi32(yAddLo, yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                    yAddHi = _mm512_dpwssd_epi32(yAddHi, yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    zAddLo = _mm512_dpwssd_epi32(zAddLo, zERLLo, _mm512_unpacklo_epi16(zSrcRightDiff, zSrcLeftDiff));
+                    zAddHi = _mm512_dpwssd_epi32(zAddHi, zERLHi, _mm512_unpackhi_epi16(zSrcRightDiff, zSrcLeftDiff));
                 } else {
-                    __m512i yAddLo1 = _mm512_madd_epi16(yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                    __m512i yAddHi1 = _mm512_madd_epi16(yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
-                    yAddLo = _mm512_add_epi32(yAddLo, yAddLo1);
-                    yAddHi = _mm512_add_epi32(yAddHi, yAddHi1);
+                    __m512i zAddLo1 = _mm512_madd_epi16(zERLLo, _mm512_unpacklo_epi16(zSrcRightDiff, zSrcLeftDiff));
+                    __m512i zAddHi1 = _mm512_madd_epi16(zERLHi, _mm512_unpackhi_epi16(zSrcRightDiff, zSrcLeftDiff));
+                    zAddLo = _mm512_add_epi32(zAddLo, zAddLo1);
+                    zAddHi = _mm512_add_epi32(zAddHi, zAddHi1);
                 }
             } else {
 #if USE_VPGATHER
 
-                __m512i yEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauUpperDiff), pmdp, 4);
-                __m512i yEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauUpperDiff), pmdp, 4);
-                __m512i yELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLowerDiff), pmdp, 4);
-                __m512i yELowerhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLowerDiff), pmdp, 4);
-                __m512i yELeftlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauLeftDiff), pmdp, 4);
-                __m512i yELefthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauLeftDiff), pmdp, 4);
-                __m512i yERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(yGauRightDiff), pmdp, 4);
-                __m512i yERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(yGauRightDiff), pmdp, 4);
+                __m512i zEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zGauUpperDiff), pmdp, 4);
+                __m512i zEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zGauUpperDiff), pmdp, 4);
+                __m512i zELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zGauLowerDiff), pmdp, 4);
+                __m512i zELowerhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zGauLowerDiff), pmdp, 4);
+                __m512i zELeftlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zGauLeftDiff), pmdp, 4);
+                __m512i zELefthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zGauLeftDiff), pmdp, 4);
+                __m512i zERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zGauRightDiff), pmdp, 4);
+                __m512i zERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zGauRightDiff), pmdp, 4);
 #else
-                _mm512_store_si512((__m512i *)(diffBuf + 0), yGauUpperDiff);
-                _mm512_store_si512((__m512i *)(diffBuf + 32), yGauLowerDiff);
-                _mm512_store_si512((__m512i *)(diffBuf + 64), yGauLeftDiff);
-                _mm512_store_si512((__m512i *)(diffBuf + 96), yGauRightDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 0), zGauUpperDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 32), zGauLowerDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 64), zGauLeftDiff);
+                _mm512_store_si512((__m512i *)(diffBuf + 96), zGauRightDiff);
 
                 for (int i = 0; i < _countof(expBuf); i += 16) {
                     expBuf[i + 0] = pmdp[diffBuf[i + 0]];
@@ -1112,56 +1101,56 @@ static __forceinline void pmd_mt_exp_avx512_base(int thread_id, int thread_num, 
                     expBuf[i + 15] = pmdp[diffBuf[i + 15]];
                 }
 
-                __m512i yEUpperlo = _mm512_load_si512((__m512i *)(expBuf + 0));
-                __m512i yEUpperhi = _mm512_load_si512((__m512i *)(expBuf + 16));
-                __m512i yELowerlo = _mm512_load_si512((__m512i *)(expBuf + 32));
-                __m512i yELowerhi = _mm512_load_si512((__m512i *)(expBuf + 48));
-                __m512i yELeftlo = _mm512_load_si512((__m512i *)(expBuf + 64));
-                __m512i yELefthi = _mm512_load_si512((__m512i *)(expBuf + 80));
-                __m512i yERightlo = _mm512_load_si512((__m512i *)(expBuf + 96));
-                __m512i yERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
+                __m512i zEUpperlo = _mm512_load_si512((__m512i *)(expBuf + 0));
+                __m512i zEUpperhi = _mm512_load_si512((__m512i *)(expBuf + 16));
+                __m512i zELowerlo = _mm512_load_si512((__m512i *)(expBuf + 32));
+                __m512i zELowerhi = _mm512_load_si512((__m512i *)(expBuf + 48));
+                __m512i zELeftlo = _mm512_load_si512((__m512i *)(expBuf + 64));
+                __m512i zELefthi = _mm512_load_si512((__m512i *)(expBuf + 80));
+                __m512i zERightlo = _mm512_load_si512((__m512i *)(expBuf + 96));
+                __m512i zERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
 #endif
 #if 1 //こちらの積算の少ないほうが高速
                 __mmask32 maskUpper = 0xAAAAAAAA;
-                __m512i yELULo = _mm512_mask_mov_epi16(yELowerlo, maskUpper, _mm512_slli_epi32(yEUpperlo, 16));
-                __m512i yELUHi = _mm512_mask_mov_epi16(yELowerhi, maskUpper, _mm512_slli_epi32(yEUpperhi, 16));
-                __m512i yERLLo = _mm512_mask_mov_epi16(yERightlo, maskUpper, _mm512_slli_epi32(yELeftlo, 16));
-                __m512i yERLHi = _mm512_mask_mov_epi16(yERighthi, maskUpper, _mm512_slli_epi32(yELefthi, 16));
+                __m512i zELULo = _mm512_mask_mov_epi16(zELowerlo, maskUpper, _mm512_slli_epi32(zEUpperlo, 16));
+                __m512i zELUHi = _mm512_mask_mov_epi16(zELowerhi, maskUpper, _mm512_slli_epi32(zEUpperhi, 16));
+                __m512i zERLLo = _mm512_mask_mov_epi16(zERightlo, maskUpper, _mm512_slli_epi32(zELeftlo, 16));
+                __m512i zERLHi = _mm512_mask_mov_epi16(zERighthi, maskUpper, _mm512_slli_epi32(zELefthi, 16));
 
-                yAddLo = _mm512_madd_epi16(yELULo, _mm512_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
-                yAddHi = _mm512_madd_epi16(yELUHi, _mm512_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+                zAddLo = _mm512_madd_epi16(zELULo, _mm512_unpacklo_epi16(zSrcLowerDiff, zSrcUpperDiff));
+                zAddHi = _mm512_madd_epi16(zELUHi, _mm512_unpackhi_epi16(zSrcLowerDiff, zSrcUpperDiff));
                 if (avx512vnni) {
-                    yAddLo = _mm512_dpwssd_epi32(yAddLo, yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                    yAddHi = _mm512_dpwssd_epi32(yAddHi, yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                    zAddLo = _mm512_dpwssd_epi32(zAddLo, zERLLo, _mm512_unpacklo_epi16(zSrcRightDiff, zSrcLeftDiff));
+                    zAddHi = _mm512_dpwssd_epi32(zAddHi, zERLHi, _mm512_unpackhi_epi16(zSrcRightDiff, zSrcLeftDiff));
                 } else {
-                    __m512i yAddLo1 = _mm512_madd_epi16(yERLLo, _mm512_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                    __m512i yAddHi1 = _mm512_madd_epi16(yERLHi, _mm512_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
-                    yAddLo = _mm512_add_epi32(yAddLo, yAddLo1);
-                    yAddHi = _mm512_add_epi32(yAddHi, yAddHi1);
+                    __m512i zAddLo1 = _mm512_madd_epi16(zERLLo, _mm512_unpacklo_epi16(zSrcRightDiff, zSrcLeftDiff));
+                    __m512i zAddHi1 = _mm512_madd_epi16(zERLHi, _mm512_unpackhi_epi16(zSrcRightDiff, zSrcLeftDiff));
+                    zAddLo = _mm512_add_epi32(zAddLo, zAddLo1);
+                    zAddHi = _mm512_add_epi32(zAddHi, zAddHi1);
                 }
     #else
-                yEUpperlo = _mm512_mullo_epi32(yEUpperlo, cvtlo512_epi16_epi32(ySrcUpperDiff));
-                yEUpperhi = _mm512_mullo_epi32(yEUpperhi, cvthi512_epi16_epi32(ySrcUpperDiff));
-                yELowerlo = _mm512_mullo_epi32(yELowerlo, cvtlo512_epi16_epi32(ySrcLowerDiff));
-                yELowerhi = _mm512_mullo_epi32(yELowerhi, cvthi512_epi16_epi32(ySrcLowerDiff));
-                yELeftlo = _mm512_mullo_epi32(yELeftlo, cvtlo512_epi16_epi32(ySrcLeftDiff));
-                yELefthi = _mm512_mullo_epi32(yELefthi, cvthi512_epi16_epi32(ySrcLeftDiff));
-                yERightlo = _mm512_mullo_epi32(yERightlo, cvtlo512_epi16_epi32(ySrcRightDiff));
-                yERighthi = _mm512_mullo_epi32(yERighthi, cvthi512_epi16_epi32(ySrcRightDiff));
+                zEUpperlo = _mm512_mullo_epi32(zEUpperlo, cvtlo512_epi16_epi32(zSrcUpperDiff));
+                zEUpperhi = _mm512_mullo_epi32(zEUpperhi, cvthi512_epi16_epi32(zSrcUpperDiff));
+                zELowerlo = _mm512_mullo_epi32(zELowerlo, cvtlo512_epi16_epi32(zSrcLowerDiff));
+                zELowerhi = _mm512_mullo_epi32(zELowerhi, cvthi512_epi16_epi32(zSrcLowerDiff));
+                zELeftlo = _mm512_mullo_epi32(zELeftlo, cvtlo512_epi16_epi32(zSrcLeftDiff));
+                zELefthi = _mm512_mullo_epi32(zELefthi, cvthi512_epi16_epi32(zSrcLeftDiff));
+                zERightlo = _mm512_mullo_epi32(zERightlo, cvtlo512_epi16_epi32(zSrcRightDiff));
+                zERighthi = _mm512_mullo_epi32(zERighthi, cvthi512_epi16_epi32(zSrcRightDiff));
 
-                yAddLo = yEUpperlo;
-                yAddHi = yEUpperhi;
-                yAddLo = _mm512_add_epi32(yAddLo, yELowerlo);
-                yAddHi = _mm512_add_epi32(yAddHi, yELowerhi);
-                yAddLo = _mm512_add_epi32(yAddLo, yELeftlo);
-                yAddHi = _mm512_add_epi32(yAddHi, yELefthi);
-                yAddLo = _mm512_add_epi32(yAddLo, yERightlo);
-                yAddHi = _mm512_add_epi32(yAddHi, yERighthi);
+                zAddLo = zEUpperlo;
+                zAddHi = zEUpperhi;
+                zAddLo = _mm512_add_epi32(zAddLo, zELowerlo);
+                zAddHi = _mm512_add_epi32(zAddHi, zELowerhi);
+                zAddLo = _mm512_add_epi32(zAddLo, zELeftlo);
+                zAddHi = _mm512_add_epi32(zAddHi, zELefthi);
+                zAddLo = _mm512_add_epi32(zAddLo, zERightlo);
+                zAddHi = _mm512_add_epi32(zAddHi, zERighthi);
 #endif
             }
 
-            __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
-            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_srai_epi32(yAddLo, 16), _mm512_srai_epi32(yAddHi, 16))));
+            __m512i zSrc = _mm512_loadu_si512((__m512i *)(src));
+            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(zSrc, _mm512_packs_epi32(_mm512_srai_epi32(zAddLo, 16), _mm512_srai_epi32(zAddHi, 16))));
     #endif
         }
 
@@ -1207,7 +1196,7 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x / threshold2 )) )  * strength2 )
     // = (1.0 / range) * (   (1.0/ (1.0 + (  x*x * inv_threshold2 )) )  * strength2 )
 
-    __m512 yMinusInvThreshold2 = _mm512_set1_ps(-1.0f * inv_threshold2);
+    __m512 zMinusInvThreshold2 = _mm512_set1_ps(-1.0f * inv_threshold2);
     __m512 zStrength2 = _mm512_set1_ps(strength2 / range);
 #else
     int* pmdp = ((PMD_MT_PRM *)param2)->pmd + PMD_TABLE_SIZE;
@@ -1217,8 +1206,8 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
     __declspec(align(32)) int16_t diffBuf[64];
     __declspec(align(32)) int expBuf[64];
 #endif
-    __m512i yPMDBufMaxLimit = _mm512_set1_epi16(PMD_TABLE_SIZE-1);
-    __m512i yPMDBufMinLimit = _mm512_set1_epi16(-PMD_TABLE_SIZE);
+    __m512i zPMDBufMaxLimit = _mm512_set1_epi16(PMD_TABLE_SIZE-1);
+    __m512i zPMDBufMinLimit = _mm512_set1_epi16(-PMD_TABLE_SIZE);
 
     for (int y = y_start; y < y_fin; y++, src_line += max_w * sizeof(PIXEL_YC), dst_line += max_w * sizeof(PIXEL_YC)) {
         uint8_t *src = src_line;
@@ -1230,89 +1219,89 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
         //先端終端ピクセルは後から上書きコピーする
         uint8_t *src_fin = src + w * sizeof(PIXEL_YC);
         for ( ; src < src_fin; src += 64, dst += 64) {
-            __m512i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
-            getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
+            __m512i zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff;
+            getDiff(src, max_w, zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff);
 #if USE_FMATH
-            __m512 ySUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcUpperDiff));
-            __m512 ySUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcUpperDiff));
-            __m512 ySLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLowerDiff));
-            __m512 ySLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLowerDiff));
-            __m512 ySLeftlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLeftDiff));
-            __m512 ySLefthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLeftDiff));
-            __m512 ySRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcRightDiff));
-            __m512 ySRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcRightDiff));
+            __m512 ySUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcUpperDiff));
+            __m512 ySUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcUpperDiff));
+            __m512 ySLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLowerDiff));
+            __m512 ySLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLowerDiff));
+            __m512 ySLeftlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLeftDiff));
+            __m512 ySLefthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLeftDiff));
+            __m512 ySRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcRightDiff));
+            __m512 ySRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcRightDiff));
 
-            __m512 yTUpperlo = _mm512_mul_ps(ySUpperlo, ySUpperlo);
-            __m512 yTUpperhi = _mm512_mul_ps(ySUpperhi, ySUpperhi);
-            __m512 yTLowerlo = _mm512_mul_ps(ySLowerlo, ySLowerlo);
-            __m512 yTLowerhi = _mm512_mul_ps(ySLowerhi, ySLowerhi);
-            __m512 yTLeftlo = _mm512_mul_ps(ySLeftlo, ySLeftlo);
-            __m512 yTLefthi = _mm512_mul_ps(ySLefthi, ySLefthi);
-            __m512 yTRightlo = _mm512_mul_ps(ySRightlo, ySRightlo);
-            __m512 yTRighthi = _mm512_mul_ps(ySRighthi, ySRighthi);
+            __m512 zTUpperlo = _mm512_mul_ps(ySUpperlo, ySUpperlo);
+            __m512 zTUpperhi = _mm512_mul_ps(ySUpperhi, ySUpperhi);
+            __m512 zTLowerlo = _mm512_mul_ps(ySLowerlo, ySLowerlo);
+            __m512 zTLowerhi = _mm512_mul_ps(ySLowerhi, ySLowerhi);
+            __m512 zTLeftlo = _mm512_mul_ps(ySLeftlo, ySLeftlo);
+            __m512 zTLefthi = _mm512_mul_ps(ySLefthi, ySLefthi);
+            __m512 zTRightlo = _mm512_mul_ps(ySRightlo, ySRightlo);
+            __m512 zTRighthi = _mm512_mul_ps(ySRighthi, ySRighthi);
 
-            yTUpperlo = _mm512_mul_ps(ySUpperlo, yMinusInvThreshold2);
-            yTUpperhi = _mm512_mul_ps(ySUpperhi, yMinusInvThreshold2);
-            yTLowerlo = _mm512_mul_ps(ySLowerlo, yMinusInvThreshold2);
-            yTLowerhi = _mm512_mul_ps(ySLowerhi, yMinusInvThreshold2);
-            yTLeftlo = _mm512_mul_ps(ySLeftlo, yMinusInvThreshold2);
-            yTLefthi = _mm512_mul_ps(ySLefthi, yMinusInvThreshold2);
-            yTRightlo = _mm512_mul_ps(ySRightlo, yMinusInvThreshold2);
-            yTRighthi = _mm512_mul_ps(ySRighthi, yMinusInvThreshold2);
+            zTUpperlo = _mm512_mul_ps(ySUpperlo, zMinusInvThreshold2);
+            zTUpperhi = _mm512_mul_ps(ySUpperhi, zMinusInvThreshold2);
+            zTLowerlo = _mm512_mul_ps(ySLowerlo, zMinusInvThreshold2);
+            zTLowerhi = _mm512_mul_ps(ySLowerhi, zMinusInvThreshold2);
+            zTLeftlo = _mm512_mul_ps(ySLeftlo, zMinusInvThreshold2);
+            zTLefthi = _mm512_mul_ps(ySLefthi, zMinusInvThreshold2);
+            zTRightlo = _mm512_mul_ps(ySRightlo, zMinusInvThreshold2);
+            zTRighthi = _mm512_mul_ps(ySRighthi, zMinusInvThreshold2);
 
-            yTUpperlo = exp_ps512(yTUpperlo);
-            yTUpperhi = exp_ps512(yTUpperhi);
-            yTLowerlo = exp_ps512(yTLowerlo);
-            yTLowerhi = exp_ps512(yTLowerhi);
-            yTLeftlo = exp_ps512(yTLeftlo);
-            yTLefthi = exp_ps512(yTLefthi);
-            yTRightlo = exp_ps512(yTRightlo);
-            yTRighthi = exp_ps512(yTRighthi);
+            zTUpperlo = exp_ps512(zTUpperlo);
+            zTUpperhi = exp_ps512(zTUpperhi);
+            zTLowerlo = exp_ps512(zTLowerlo);
+            zTLowerhi = exp_ps512(zTLowerhi);
+            zTLeftlo = exp_ps512(zTLeftlo);
+            zTLefthi = exp_ps512(zTLefthi);
+            zTRightlo = exp_ps512(zTRightlo);
+            zTRighthi = exp_ps512(zTRighthi);
 
-            yTUpperlo = _mm512_mul_ps(zStrength2, yTUpperlo);
-            yTUpperhi = _mm512_mul_ps(zStrength2, yTUpperhi);
-            yTLowerlo = _mm512_mul_ps(zStrength2, yTLowerlo);
-            yTLowerhi = _mm512_mul_ps(zStrength2, yTLowerhi);
-            yTLeftlo = _mm512_mul_ps(zStrength2, yTLeftlo);
-            yTLefthi = _mm512_mul_ps(zStrength2, yTLefthi);
-            yTRightlo = _mm512_mul_ps(zStrength2, yTRightlo);
-            yTRighthi = _mm512_mul_ps(zStrength2, yTRighthi);
+            zTUpperlo = _mm512_mul_ps(zStrength2, zTUpperlo);
+            zTUpperhi = _mm512_mul_ps(zStrength2, zTUpperhi);
+            zTLowerlo = _mm512_mul_ps(zStrength2, zTLowerlo);
+            zTLowerhi = _mm512_mul_ps(zStrength2, zTLowerhi);
+            zTLeftlo = _mm512_mul_ps(zStrength2, zTLeftlo);
+            zTLefthi = _mm512_mul_ps(zStrength2, zTLefthi);
+            zTRightlo = _mm512_mul_ps(zStrength2, zTRightlo);
+            zTRighthi = _mm512_mul_ps(zStrength2, zTRighthi);
 
-            __m512 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
-            yAddLo0 = _mm512_fmadd_ps(ySLowerlo, yTLowerlo, _mm512_mul_ps(ySUpperlo, yTUpperlo));
-            yAddHi0 = _mm512_fmadd_ps(ySLowerhi, yTLowerhi, _mm512_mul_ps(ySUpperhi, yTUpperhi));
-            yAddLo1 = _mm512_fmadd_ps(ySRightlo, yTRightlo, _mm512_mul_ps(ySLeftlo, yTLeftlo));
-            yAddHi1 = _mm512_fmadd_ps(ySRighthi, yTRighthi, _mm512_mul_ps(ySLefthi, yTLefthi));
+            __m512 zAddLo0, zAddHi0, zAddLo1, zAddHi1;
+            zAddLo0 = _mm512_fmadd_ps(ySLowerlo, zTLowerlo, _mm512_mul_ps(ySUpperlo, zTUpperlo));
+            zAddHi0 = _mm512_fmadd_ps(ySLowerhi, zTLowerhi, _mm512_mul_ps(ySUpperhi, zTUpperhi));
+            zAddLo1 = _mm512_fmadd_ps(ySRightlo, zTRightlo, _mm512_mul_ps(ySLeftlo, zTLeftlo));
+            zAddHi1 = _mm512_fmadd_ps(ySRighthi, zTRighthi, _mm512_mul_ps(ySLefthi, zTLefthi));
 
-            yAddLo0 = _mm512_add_ps(yAddLo0, yAddLo1);
-            yAddHi0 = _mm512_add_ps(yAddHi0, yAddHi1);
+            zAddLo0 = _mm512_add_ps(zAddLo0, zAddLo1);
+            zAddHi0 = _mm512_add_ps(zAddHi0, zAddHi1);
 
-            __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
-            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_cvtps_epi32(yAddLo0), _mm512_cvtps_epi32(yAddHi0))));
+            __m512i zSrc = _mm512_loadu_si512((__m512i *)(src));
+            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(zSrc, _mm512_packs_epi32(_mm512_cvtps_epi32(zAddLo0), _mm512_cvtps_epi32(zAddHi0))));
 #else
-            ySrcUpperDiff = _mm512_max_epi16(ySrcUpperDiff, yPMDBufMinLimit);
-            ySrcLowerDiff = _mm512_max_epi16(ySrcLowerDiff, yPMDBufMinLimit);
-            ySrcLeftDiff  = _mm512_max_epi16(ySrcLeftDiff,  yPMDBufMinLimit);
-            ySrcRightDiff = _mm512_max_epi16(ySrcRightDiff, yPMDBufMinLimit);
+            zSrcUpperDiff = _mm512_max_epi16(zSrcUpperDiff, zPMDBufMinLimit);
+            zSrcLowerDiff = _mm512_max_epi16(zSrcLowerDiff, zPMDBufMinLimit);
+            zSrcLeftDiff  = _mm512_max_epi16(zSrcLeftDiff,  zPMDBufMinLimit);
+            zSrcRightDiff = _mm512_max_epi16(zSrcRightDiff, zPMDBufMinLimit);
 
-            ySrcUpperDiff = _mm512_min_epi16(ySrcUpperDiff, yPMDBufMaxLimit);
-            ySrcLowerDiff = _mm512_min_epi16(ySrcLowerDiff, yPMDBufMaxLimit);
-            ySrcLeftDiff  = _mm512_min_epi16(ySrcLeftDiff,  yPMDBufMaxLimit);
-            ySrcRightDiff = _mm512_min_epi16(ySrcRightDiff, yPMDBufMaxLimit);
+            zSrcUpperDiff = _mm512_min_epi16(zSrcUpperDiff, zPMDBufMaxLimit);
+            zSrcLowerDiff = _mm512_min_epi16(zSrcLowerDiff, zPMDBufMaxLimit);
+            zSrcLeftDiff  = _mm512_min_epi16(zSrcLeftDiff,  zPMDBufMaxLimit);
+            zSrcRightDiff = _mm512_min_epi16(zSrcRightDiff, zPMDBufMaxLimit);
 #if USE_VPGATHER
-            __m512i yEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(ySrcUpperDiff), pmdp, 4);
-            __m512i yEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(ySrcUpperDiff), pmdp, 4);
-            __m512i yELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(ySrcLowerDiff), pmdp, 4);
-            __m512i yELowerhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(ySrcLowerDiff), pmdp, 4);
-            __m512i yELeftlo  = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(ySrcLeftDiff),  pmdp, 4);
-            __m512i yELefthi  = _mm512_i32gather_epi32(cvthi512_epi16_epi32(ySrcLeftDiff),  pmdp, 4);
-            __m512i yERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(ySrcRightDiff), pmdp, 4);
-            __m512i yERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(ySrcRightDiff), pmdp, 4);
+            __m512i zEUpperlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zSrcUpperDiff), pmdp, 4);
+            __m512i zEUpperhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zSrcUpperDiff), pmdp, 4);
+            __m512i zELowerlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zSrcLowerDiff), pmdp, 4);
+            __m512i zELowerhi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zSrcLowerDiff), pmdp, 4);
+            __m512i zELeftlo  = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zSrcLeftDiff),  pmdp, 4);
+            __m512i zELefthi  = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zSrcLeftDiff),  pmdp, 4);
+            __m512i zERightlo = _mm512_i32gather_epi32(cvtlo512_epi16_epi32(zSrcRightDiff), pmdp, 4);
+            __m512i zERighthi = _mm512_i32gather_epi32(cvthi512_epi16_epi32(zSrcRightDiff), pmdp, 4);
 #else
-            _mm512_store_si512((__m512i *)(diffBuf +  0), ySrcUpperDiff);
-            _mm512_store_si512((__m512i *)(diffBuf + 32), ySrcLowerDiff);
-            _mm512_store_si512((__m512i *)(diffBuf + 64), ySrcLeftDiff);
-            _mm512_store_si512((__m512i *)(diffBuf + 96), ySrcRightDiff);
+            _mm512_store_si512((__m512i *)(diffBuf +  0), zSrcUpperDiff);
+            _mm512_store_si512((__m512i *)(diffBuf + 32), zSrcLowerDiff);
+            _mm512_store_si512((__m512i *)(diffBuf + 64), zSrcLeftDiff);
+            _mm512_store_si512((__m512i *)(diffBuf + 96), zSrcRightDiff);
 
             for (int i = 0; i < _countof(expBuf); i += 16) {
                 expBuf[i+ 0] = pmdp[diffBuf[i+ 0]];
@@ -1333,27 +1322,27 @@ static __forceinline void anisotropic_mt_exp_avx512_base(int thread_id, int thre
                 expBuf[i+15] = pmdp[diffBuf[i+15]];
             }
 
-            __m512i yEUpperlo = _mm512_load_si512((__m512i *)(expBuf +   0));
-            __m512i yEUpperhi = _mm512_load_si512((__m512i *)(expBuf +  16));
-            __m512i yELowerlo = _mm512_load_si512((__m512i *)(expBuf +  32));
-            __m512i yELowerhi = _mm512_load_si512((__m512i *)(expBuf +  48));
-            __m512i yELeftlo  = _mm512_load_si512((__m512i *)(expBuf +  64));
-            __m512i yELefthi  = _mm512_load_si512((__m512i *)(expBuf +  80));
-            __m512i yERightlo = _mm512_load_si512((__m512i *)(expBuf +  96));
-            __m512i yERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
+            __m512i zEUpperlo = _mm512_load_si512((__m512i *)(expBuf +   0));
+            __m512i zEUpperhi = _mm512_load_si512((__m512i *)(expBuf +  16));
+            __m512i zELowerlo = _mm512_load_si512((__m512i *)(expBuf +  32));
+            __m512i zELowerhi = _mm512_load_si512((__m512i *)(expBuf +  48));
+            __m512i zELeftlo  = _mm512_load_si512((__m512i *)(expBuf +  64));
+            __m512i zELefthi  = _mm512_load_si512((__m512i *)(expBuf +  80));
+            __m512i zERightlo = _mm512_load_si512((__m512i *)(expBuf +  96));
+            __m512i zERighthi = _mm512_load_si512((__m512i *)(expBuf + 112));
 #endif
-            __m512i yAddLo, yAddHi;
-            yAddLo = yEUpperlo;
-            yAddHi = yEUpperhi;
-            yAddLo = _mm512_add_epi32(yAddLo, yELowerlo);
-            yAddHi = _mm512_add_epi32(yAddHi, yELowerhi);
-            yAddLo = _mm512_add_epi32(yAddLo, yELeftlo);
-            yAddHi = _mm512_add_epi32(yAddHi, yELefthi);
-            yAddLo = _mm512_add_epi32(yAddLo, yERightlo);
-            yAddHi = _mm512_add_epi32(yAddHi, yERighthi);
+            __m512i zAddLo, zAddHi;
+            zAddLo = zEUpperlo;
+            zAddHi = zEUpperhi;
+            zAddLo = _mm512_add_epi32(zAddLo, zELowerlo);
+            zAddHi = _mm512_add_epi32(zAddHi, zELowerhi);
+            zAddLo = _mm512_add_epi32(zAddLo, zELeftlo);
+            zAddHi = _mm512_add_epi32(zAddHi, zELefthi);
+            zAddLo = _mm512_add_epi32(zAddLo, zERightlo);
+            zAddHi = _mm512_add_epi32(zAddHi, zERighthi);
 
-            __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
-            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(yAddLo, yAddHi)));
+            __m512i zSrc = _mm512_loadu_si512((__m512i *)(src));
+            _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(zSrc, _mm512_packs_epi32(zAddLo, zAddHi)));
 #endif
         }
         //先端と終端をそのままコピー
@@ -1371,74 +1360,74 @@ template <bool use_stream>
 static __forceinline void pmd_mt_avx512_line(uint8_t *dst, uint8_t *src, uint8_t *gau, int process_size_in_byte, int max_w, const __m512& zInvThreshold2, const __m512& zStrength2, const __m512& zOnef) {
     uint8_t *src_fin = src + process_size_in_byte;
     for (; src < src_fin; src += 64, dst += 64, gau += 64) {
-        __m512i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
-        __m512i yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff;
-        getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
-        getDiff(gau, max_w, yGauUpperDiff, yGauLowerDiff, yGauLeftDiff, yGauRightDiff);
+        __m512i zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff;
+        __m512i zGauUpperDiff, zGauLowerDiff, zGauLeftDiff, zGauRightDiff;
+        getDiff(src, max_w, zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff);
+        getDiff(gau, max_w, zGauUpperDiff, zGauLowerDiff, zGauLeftDiff, zGauRightDiff);
 
-        __m512 yGUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauUpperDiff));
-        __m512 yGUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauUpperDiff));
-        __m512 yGLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauLowerDiff));
-        __m512 yGLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauLowerDiff));
-        __m512 yGLeftlo  = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauLeftDiff));
-        __m512 yGLefthi  = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauLeftDiff));
-        __m512 yGRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(yGauRightDiff));
-        __m512 yGRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(yGauRightDiff));
+        __m512 zGUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauUpperDiff));
+        __m512 zGUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauUpperDiff));
+        __m512 zGLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauLowerDiff));
+        __m512 zGLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauLowerDiff));
+        __m512 zGLeftlo  = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauLeftDiff));
+        __m512 zGLefthi  = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauLeftDiff));
+        __m512 zGRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zGauRightDiff));
+        __m512 zGRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zGauRightDiff));
 
-        yGUpperlo = _mm512_mul_ps(yGUpperlo, yGUpperlo);
-        yGUpperhi = _mm512_mul_ps(yGUpperhi, yGUpperhi);
-        yGLowerlo = _mm512_mul_ps(yGLowerlo, yGLowerlo);
-        yGLowerhi = _mm512_mul_ps(yGLowerhi, yGLowerhi);
-        yGLeftlo  = _mm512_mul_ps(yGLeftlo,  yGLeftlo);
-        yGLefthi  = _mm512_mul_ps(yGLefthi,  yGLefthi);
-        yGRightlo = _mm512_mul_ps(yGRightlo, yGRightlo);
-        yGRighthi = _mm512_mul_ps(yGRighthi, yGRighthi);
+        zGUpperlo = _mm512_mul_ps(zGUpperlo, zGUpperlo);
+        zGUpperhi = _mm512_mul_ps(zGUpperhi, zGUpperhi);
+        zGLowerlo = _mm512_mul_ps(zGLowerlo, zGLowerlo);
+        zGLowerhi = _mm512_mul_ps(zGLowerhi, zGLowerhi);
+        zGLeftlo  = _mm512_mul_ps(zGLeftlo,  zGLeftlo);
+        zGLefthi  = _mm512_mul_ps(zGLefthi,  zGLefthi);
+        zGRightlo = _mm512_mul_ps(zGRightlo, zGRightlo);
+        zGRighthi = _mm512_mul_ps(zGRighthi, zGRighthi);
 
-        yGUpperlo = _mm512_fmadd_ps(yGUpperlo, zInvThreshold2, zOnef);
-        yGUpperhi = _mm512_fmadd_ps(yGUpperhi, zInvThreshold2, zOnef);
-        yGLowerlo = _mm512_fmadd_ps(yGLowerlo, zInvThreshold2, zOnef);
-        yGLowerhi = _mm512_fmadd_ps(yGLowerhi, zInvThreshold2, zOnef);
-        yGLeftlo  = _mm512_fmadd_ps(yGLeftlo,  zInvThreshold2, zOnef);
-        yGLefthi  = _mm512_fmadd_ps(yGLefthi,  zInvThreshold2, zOnef);
-        yGRightlo = _mm512_fmadd_ps(yGRightlo, zInvThreshold2, zOnef);
-        yGRighthi = _mm512_fmadd_ps(yGRighthi, zInvThreshold2, zOnef);
+        zGUpperlo = _mm512_fmadd_ps(zGUpperlo, zInvThreshold2, zOnef);
+        zGUpperhi = _mm512_fmadd_ps(zGUpperhi, zInvThreshold2, zOnef);
+        zGLowerlo = _mm512_fmadd_ps(zGLowerlo, zInvThreshold2, zOnef);
+        zGLowerhi = _mm512_fmadd_ps(zGLowerhi, zInvThreshold2, zOnef);
+        zGLeftlo  = _mm512_fmadd_ps(zGLeftlo,  zInvThreshold2, zOnef);
+        zGLefthi  = _mm512_fmadd_ps(zGLefthi,  zInvThreshold2, zOnef);
+        zGRightlo = _mm512_fmadd_ps(zGRightlo, zInvThreshold2, zOnef);
+        zGRighthi = _mm512_fmadd_ps(zGRighthi, zInvThreshold2, zOnef);
 
 #if 1
-        yGUpperlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGUpperlo));
-        yGUpperhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGUpperhi));
-        yGLowerlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGLowerlo));
-        yGLowerhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGLowerhi));
-        yGLeftlo  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGLeftlo));
-        yGLefthi  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGLefthi));
-        yGRightlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGRightlo));
-        yGRighthi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yGRighthi));
+        zGUpperlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGUpperlo));
+        zGUpperhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGUpperhi));
+        zGLowerlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGLowerlo));
+        zGLowerhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGLowerhi));
+        zGLeftlo  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGLeftlo));
+        zGLefthi  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGLefthi));
+        zGRightlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGRightlo));
+        zGRighthi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zGRighthi));
 #else
-        yGUpperlo = _mm512_div_ps(zStrength2, yGUpperlo);
-        yGUpperhi = _mm512_div_ps(zStrength2, yGUpperhi);
-        yGLowerlo = _mm512_div_ps(zStrength2, yGLowerlo);
-        yGLowerhi = _mm512_div_ps(zStrength2, yGLowerhi);
-        yGLeftlo  = _mm512_div_ps(zStrength2, yGLeftlo);
-        yGLefthi  = _mm512_div_ps(zStrength2, yGLefthi);
-        yGRightlo = _mm512_div_ps(zStrength2, yGRightlo);
-        yGRighthi = _mm512_div_ps(zStrength2, yGRighthi);
+        zGUpperlo = _mm512_div_ps(zStrength2, zGUpperlo);
+        zGUpperhi = _mm512_div_ps(zStrength2, zGUpperhi);
+        zGLowerlo = _mm512_div_ps(zStrength2, zGLowerlo);
+        zGLowerhi = _mm512_div_ps(zStrength2, zGLowerhi);
+        zGLeftlo  = _mm512_div_ps(zStrength2, zGLeftlo);
+        zGLefthi  = _mm512_div_ps(zStrength2, zGLefthi);
+        zGRightlo = _mm512_div_ps(zStrength2, zGRightlo);
+        zGRighthi = _mm512_div_ps(zStrength2, zGRighthi);
 #endif
 
-        __m512 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
-        yGUpperlo = _mm512_mul_ps(yGUpperlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcUpperDiff)));
-        yGUpperhi = _mm512_mul_ps(yGUpperhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcUpperDiff)));
-        yGLeftlo  = _mm512_mul_ps(yGLeftlo,  _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLeftDiff)));
-        yGLefthi  = _mm512_mul_ps(yGLefthi,  _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLeftDiff)));
+        __m512 zAddLo0, zAddHi0, zAddLo1, zAddHi1;
+        zGUpperlo = _mm512_mul_ps(zGUpperlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcUpperDiff)));
+        zGUpperhi = _mm512_mul_ps(zGUpperhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcUpperDiff)));
+        zGLeftlo  = _mm512_mul_ps(zGLeftlo,  _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLeftDiff)));
+        zGLefthi  = _mm512_mul_ps(zGLefthi,  _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLeftDiff)));
 
-        yAddLo0   = _mm512_fmadd_ps(yGLowerlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLowerDiff)), yGUpperlo);
-        yAddHi0   = _mm512_fmadd_ps(yGLowerhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLowerDiff)), yGUpperhi);
-        yAddLo1   = _mm512_fmadd_ps(yGRightlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcRightDiff)), yGLeftlo);
-        yAddHi1   = _mm512_fmadd_ps(yGRighthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcRightDiff)), yGLefthi);
+        zAddLo0   = _mm512_fmadd_ps(zGLowerlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLowerDiff)), zGUpperlo);
+        zAddHi0   = _mm512_fmadd_ps(zGLowerhi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLowerDiff)), zGUpperhi);
+        zAddLo1   = _mm512_fmadd_ps(zGRightlo, _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcRightDiff)), zGLeftlo);
+        zAddHi1   = _mm512_fmadd_ps(zGRighthi, _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcRightDiff)), zGLefthi);
 
-        yAddLo0 = _mm512_add_ps(yAddLo0, yAddLo1);
-        yAddHi0 = _mm512_add_ps(yAddHi0, yAddHi1);
+        zAddLo0 = _mm512_add_ps(zAddLo0, zAddLo1);
+        zAddHi0 = _mm512_add_ps(zAddHi0, zAddHi1);
 
-        __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
-        _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_cvtps_epi32(yAddLo0), _mm512_cvtps_epi32(yAddHi0))));
+        __m512i zSrc = _mm512_loadu_si512((__m512i *)(src));
+        _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(zSrc, _mm512_packs_epi32(_mm512_cvtps_epi32(zAddLo0), _mm512_cvtps_epi32(zAddHi0))));
     }
 }
 
@@ -1547,67 +1536,67 @@ template <bool use_stream>
 static __forceinline void anisotropic_mt_avx512_line(uint8_t *dst, uint8_t *src, int process_size_in_byte, int max_w, const __m512& zInvThreshold2, const __m512& zStrength2, const __m512& zOnef) {
     uint8_t *src_fin = src + process_size_in_byte;
     for ( ; src < src_fin; src += 64, dst += 64) {
-        __m512i ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff;
-        getDiff(src, max_w, ySrcUpperDiff, ySrcLowerDiff, ySrcLeftDiff, ySrcRightDiff);
+        __m512i zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff;
+        getDiff(src, max_w, zSrcUpperDiff, zSrcLowerDiff, zSrcLeftDiff, zSrcRightDiff);
 
-        __m512 xSUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcUpperDiff));
-        __m512 xSUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcUpperDiff));
-        __m512 xSLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLowerDiff));
-        __m512 xSLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLowerDiff));
-        __m512 xSLeftlo  = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcLeftDiff));
-        __m512 xSLefthi  = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcLeftDiff));
-        __m512 xSRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(ySrcRightDiff));
-        __m512 xSRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(ySrcRightDiff));
+        __m512 xSUpperlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcUpperDiff));
+        __m512 xSUpperhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcUpperDiff));
+        __m512 xSLowerlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLowerDiff));
+        __m512 xSLowerhi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLowerDiff));
+        __m512 xSLeftlo  = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcLeftDiff));
+        __m512 xSLefthi  = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcLeftDiff));
+        __m512 xSRightlo = _mm512_cvtepi32_ps(cvtlo512_epi16_epi32(zSrcRightDiff));
+        __m512 xSRighthi = _mm512_cvtepi32_ps(cvthi512_epi16_epi32(zSrcRightDiff));
 
-        __m512 yTUpperlo = _mm512_mul_ps(xSUpperlo, xSUpperlo);
-        __m512 yTUpperhi = _mm512_mul_ps(xSUpperhi, xSUpperhi);
-        __m512 yTLowerlo = _mm512_mul_ps(xSLowerlo, xSLowerlo);
-        __m512 yTLowerhi = _mm512_mul_ps(xSLowerhi, xSLowerhi);
-        __m512 yTLeftlo  = _mm512_mul_ps(xSLeftlo,  xSLeftlo);
-        __m512 yTLefthi  = _mm512_mul_ps(xSLefthi,  xSLefthi);
-        __m512 yTRightlo = _mm512_mul_ps(xSRightlo, xSRightlo);
-        __m512 yTRighthi = _mm512_mul_ps(xSRighthi, xSRighthi);
+        __m512 zTUpperlo = _mm512_mul_ps(xSUpperlo, xSUpperlo);
+        __m512 zTUpperhi = _mm512_mul_ps(xSUpperhi, xSUpperhi);
+        __m512 zTLowerlo = _mm512_mul_ps(xSLowerlo, xSLowerlo);
+        __m512 zTLowerhi = _mm512_mul_ps(xSLowerhi, xSLowerhi);
+        __m512 zTLeftlo  = _mm512_mul_ps(xSLeftlo,  xSLeftlo);
+        __m512 zTLefthi  = _mm512_mul_ps(xSLefthi,  xSLefthi);
+        __m512 zTRightlo = _mm512_mul_ps(xSRightlo, xSRightlo);
+        __m512 zTRighthi = _mm512_mul_ps(xSRighthi, xSRighthi);
 
-        yTUpperlo = _mm512_fmadd_ps(yTUpperlo, zInvThreshold2, zOnef);
-        yTUpperhi = _mm512_fmadd_ps(yTUpperhi, zInvThreshold2, zOnef);
-        yTLowerlo = _mm512_fmadd_ps(yTLowerlo, zInvThreshold2, zOnef);
-        yTLowerhi = _mm512_fmadd_ps(yTLowerhi, zInvThreshold2, zOnef);
-        yTLeftlo  = _mm512_fmadd_ps(yTLeftlo,  zInvThreshold2, zOnef);
-        yTLefthi  = _mm512_fmadd_ps(yTLefthi,  zInvThreshold2, zOnef);
-        yTRightlo = _mm512_fmadd_ps(yTRightlo, zInvThreshold2, zOnef);
-        yTRighthi = _mm512_fmadd_ps(yTRighthi, zInvThreshold2, zOnef);
+        zTUpperlo = _mm512_fmadd_ps(zTUpperlo, zInvThreshold2, zOnef);
+        zTUpperhi = _mm512_fmadd_ps(zTUpperhi, zInvThreshold2, zOnef);
+        zTLowerlo = _mm512_fmadd_ps(zTLowerlo, zInvThreshold2, zOnef);
+        zTLowerhi = _mm512_fmadd_ps(zTLowerhi, zInvThreshold2, zOnef);
+        zTLeftlo  = _mm512_fmadd_ps(zTLeftlo,  zInvThreshold2, zOnef);
+        zTLefthi  = _mm512_fmadd_ps(zTLefthi,  zInvThreshold2, zOnef);
+        zTRightlo = _mm512_fmadd_ps(zTRightlo, zInvThreshold2, zOnef);
+        zTRighthi = _mm512_fmadd_ps(zTRighthi, zInvThreshold2, zOnef);
 
 #if 1
-        yTUpperlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTUpperlo));
-        yTUpperhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTUpperhi));
-        yTLowerlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTLowerlo));
-        yTLowerhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTLowerhi));
-        yTLeftlo  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTLeftlo));
-        yTLefthi  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTLefthi));
-        yTRightlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTRightlo));
-        yTRighthi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(yTRighthi));
+        zTUpperlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTUpperlo));
+        zTUpperhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTUpperhi));
+        zTLowerlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTLowerlo));
+        zTLowerhi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTLowerhi));
+        zTLeftlo  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTLeftlo));
+        zTLefthi  = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTLefthi));
+        zTRightlo = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTRightlo));
+        zTRighthi = _mm512_mul_ps(zStrength2, _mm512_rcp14_ps(zTRighthi));
 #else
-        yTUpperlo = _mm512_div_ps(zStrength2, yTUpperlo);
-        yTUpperhi = _mm512_div_ps(zStrength2, yTUpperhi);
-        yTLowerlo = _mm512_div_ps(zStrength2, yTLowerlo);
-        yTLowerhi = _mm512_div_ps(zStrength2, yTLowerhi);
-        yTLeftlo  = _mm512_div_ps(zStrength2, yTLeftlo);
-        yTLefthi  = _mm512_div_ps(zStrength2, yTLefthi);
-        yTRightlo = _mm512_div_ps(zStrength2, yTRightlo);
-        yTRighthi = _mm512_div_ps(zStrength2, yTRighthi);
+        zTUpperlo = _mm512_div_ps(zStrength2, zTUpperlo);
+        zTUpperhi = _mm512_div_ps(zStrength2, zTUpperhi);
+        zTLowerlo = _mm512_div_ps(zStrength2, zTLowerlo);
+        zTLowerhi = _mm512_div_ps(zStrength2, zTLowerhi);
+        zTLeftlo  = _mm512_div_ps(zStrength2, zTLeftlo);
+        zTLefthi  = _mm512_div_ps(zStrength2, zTLefthi);
+        zTRightlo = _mm512_div_ps(zStrength2, zTRightlo);
+        zTRighthi = _mm512_div_ps(zStrength2, zTRighthi);
 #endif
 
-        __m512 yAddLo0, yAddHi0, yAddLo1, yAddHi1;
-        yAddLo0   = _mm512_fmadd_ps(xSLowerlo, yTLowerlo, _mm512_mul_ps(xSUpperlo, yTUpperlo));
-        yAddHi0   = _mm512_fmadd_ps(xSLowerhi, yTLowerhi, _mm512_mul_ps(xSUpperhi, yTUpperhi));
-        yAddLo1   = _mm512_fmadd_ps(xSRightlo, yTRightlo, _mm512_mul_ps(xSLeftlo, yTLeftlo));
-        yAddHi1   = _mm512_fmadd_ps(xSRighthi, yTRighthi, _mm512_mul_ps(xSLefthi, yTLefthi));
+        __m512 zAddLo0, zAddHi0, zAddLo1, zAddHi1;
+        zAddLo0   = _mm512_fmadd_ps(xSLowerlo, zTLowerlo, _mm512_mul_ps(xSUpperlo, zTUpperlo));
+        zAddHi0   = _mm512_fmadd_ps(xSLowerhi, zTLowerhi, _mm512_mul_ps(xSUpperhi, zTUpperhi));
+        zAddLo1   = _mm512_fmadd_ps(xSRightlo, zTRightlo, _mm512_mul_ps(xSLeftlo, zTLeftlo));
+        zAddHi1   = _mm512_fmadd_ps(xSRighthi, zTRighthi, _mm512_mul_ps(xSLefthi, zTLefthi));
 
-        yAddLo0 = _mm512_add_ps(yAddLo0, yAddLo1);
-        yAddHi0 = _mm512_add_ps(yAddHi0, yAddHi1);
+        zAddLo0 = _mm512_add_ps(zAddLo0, zAddLo1);
+        zAddHi0 = _mm512_add_ps(zAddHi0, zAddHi1);
 
-        __m512i ySrc = _mm512_loadu_si512((__m512i *)(src));
-        _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(ySrc, _mm512_packs_epi32(_mm512_cvtps_epi32(yAddLo0), _mm512_cvtps_epi32(yAddHi0))));
+        __m512i zSrc = _mm512_loadu_si512((__m512i *)(src));
+        _mm512_storeu_si512((__m512i *)(dst), _mm512_add_epi16(zSrc, _mm512_packs_epi32(_mm512_cvtps_epi32(zAddLo0), _mm512_cvtps_epi32(zAddHi0))));
     }
 }
 
