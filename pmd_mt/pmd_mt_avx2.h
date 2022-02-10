@@ -28,6 +28,7 @@ static __forceinline void getDiff(uint8_t *src, int max_w, __m256i& xUpper, __m2
     xRight = _mm256_subs_epi16(_mm256_alignr_epi8(ySrc1, ySrc0, 12), ySrc);
 }
 
+template<bool avx2vnni>
 static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, void *param1, void *param2) {
     avx2_dummy();
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
@@ -207,12 +208,17 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
             __m256i yERLLo = _mm256_blend_epi16(yERightlo, _mm256_slli_epi32(yELeftlo, 16),  0xAA);
             __m256i yERLHi = _mm256_blend_epi16(yERighthi, _mm256_slli_epi32(yELefthi, 16),  0xAA);
 
-            __m256i yAddLo0 = _mm256_madd_epi16(yELULo, _mm256_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
-            __m256i yAddHi0 = _mm256_madd_epi16(yELUHi, _mm256_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
-            __m256i yAddLo1 = _mm256_madd_epi16(yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-            __m256i yAddHi1 = _mm256_madd_epi16(yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
-            __m256i yAddLo = _mm256_add_epi32(yAddLo0, yAddLo1);
-            __m256i yAddHi = _mm256_add_epi32(yAddHi0, yAddHi1);
+            __m256i yAddLo = _mm256_madd_epi16(yELULo, _mm256_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
+            __m256i yAddHi = _mm256_madd_epi16(yELUHi, _mm256_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
+            if (avx2vnni) {
+                yAddLo = _mm256_dpwssd_epi32(yAddLo, yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                yAddHi = _mm256_dpwssd_epi32(yAddHi, yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+            } else {
+                __m256i yAddLo1 = _mm256_madd_epi16(yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                __m256i yAddHi1 = _mm256_madd_epi16(yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                yAddLo = _mm256_add_epi32(yAddLo, yAddLo1);
+                yAddHi = _mm256_add_epi32(yAddHi, yAddHi1);
+            }
 #else
             yEUpperlo = _mm256_mullo_epi32(yEUpperlo, cvtlo256_epi16_epi32(ySrcUpperDiff));
             yEUpperhi = _mm256_mullo_epi32(yEUpperhi, cvthi256_epi16_epi32(ySrcUpperDiff));

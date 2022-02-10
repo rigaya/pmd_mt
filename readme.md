@@ -4,7 +4,7 @@
 
 その名の通りPMD_MTの高速化版です。
 
-もともとのCによるコードに対し、SSE2 / SSSE3 / SSE4.1 / AVX / FMA3 / FMA4 / AVX2 / AVX512BW / AVX512VBMI / AVX512VNNI などにより高速化しました。自動的に使用可能な最速の関数が使用されるようになっています。
+もともとのCによるコードに対し、SSE2 / SSSE3 / SSE4.1 / AVX / FMA3 / FMA4 / AVX2 / AVX2VNNI / AVX512BW / AVX512VBMI / AVX512VNNI などにより高速化しました。自動的に使用可能な最速の関数が使用されるようになっています。
 
 マルチスレッドにも対応しています。(オリジナル版からマルチスレッドには対応しています)  
 
@@ -57,6 +57,7 @@ simd=auto
 | auto           | 環境に合わせ自動選択        |                       |
 | avx512vbmi     | avx512vbmi+vnni             | Icelake               |
 | avx512bw       | avx512bw                    | Skylake-X             |
+| avx2vnni       | avx2 (gather使用)+vnni      | Alderlake             |
 | avx2           | avx2 (gather使用)           | Broadwell             |
 | avx2nogather   | avx2 (gather不使用)         | Haswell/Ryzen         | 
 | avx            | 128bit-AVX                  | SandyBridge/Bulldozer |

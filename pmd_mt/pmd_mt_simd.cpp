@@ -31,6 +31,7 @@ enum {
     AVX512VL    = 0x100000,
     AVX512VBMI  = 0x200000,
     AVX512VNNI  = 0x400000,
+    AVX2VNNI    = 0x800000,
 };
 
 static DWORD get_availableSIMD() {
@@ -58,6 +59,7 @@ static DWORD get_availableSIMD() {
 #if (_MSC_VER >= 1700)
     __cpuid(CPUInfo, 7);
     if (simd & AVX) {
+        const auto subleaves = CPUInfo[0];
         if (CPUInfo[1] & 0x00000020)
             simd |= AVX2;
         if (CPUInfo[1] & (1<<18)) //rdseed -> Broadwell
@@ -76,6 +78,11 @@ static DWORD get_availableSIMD() {
                 if (CPUInfo[2] & (1u << 11)) simd |= AVX512VNNI;
             }
         }
+        if (subleaves >= 1) {
+            __cpuidex(CPUInfo, 7, 1);
+            if (CPUInfo[0] & (1u << 4)) simd |= AVX2VNNI;
+        }
+
         __cpuid(CPUInfo, 0x80000001);
         if (CPUInfo[2] & 0x00000800)
             simd |= XOP;
@@ -98,17 +105,19 @@ static bool isAMD() {
 }
 
 static const PMD_MT_FUNC FUNC_LIST[] = {
-    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx512vbmivnni, { { anisotropic_mt_avx512,     anisotropic_mt_exp_avx512      }, { pmd_mt_avx512,    pmd_mt_exp_avx512vnni  } }, AVX512VNNI|AVX512VBMI|AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX },
-    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx512,         { { anisotropic_mt_avx512,     anisotropic_mt_exp_avx512      }, { pmd_mt_avx512,    pmd_mt_exp_avx512      } }, AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX },
-    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx2,           { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2_gather }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2_gather } }, FAST_GATHER|AVX2|FMA3|AVX },
-    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx2,           { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2        }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2        } }, AVX2|FMA3|AVX },
-    { gaussianH_avx,   gaussianV_avx,   NULL,                      { { anisotropic_mt_avx_fma3,   anisotropic_mt_exp_avx         }, { pmd_mt_avx_fma3,  pmd_mt_exp_avx         } }, FMA3|AVX },
-    { gaussianH_avx,   gaussianV_avx,   NULL,                      { { anisotropic_mt_avx_fma4,   anisotropic_mt_exp_avx         }, { pmd_mt_avx_fma4,  pmd_mt_exp_avx         } }, FMA4|AVX },
-    { gaussianH_avx,   gaussianV_avx,   NULL,                      { { anisotropic_mt_avx,        anisotropic_mt_exp_avx         }, { pmd_mt_avx,       pmd_mt_exp_avx         } }, AVX|SSE41|SSSE3|SSE2 },
-    { gaussianH_sse41, gaussianV_sse41, NULL,                      { { anisotropic_mt_sse41,      anisotropic_mt_exp_sse41       }, { pmd_mt_sse41,     pmd_mt_exp_sse41       } }, SSE41|SSSE3|SSE2 },
-    { gaussianH_ssse3, gaussianV_ssse3, NULL,                      { { anisotropic_mt_ssse3,      anisotropic_mt_exp_ssse3       }, { pmd_mt_ssse3,     pmd_mt_exp_ssse3       } }, SSSE3|SSE2 },
-    { gaussianH_sse2,  gaussianV_sse2,  NULL,                      { { anisotropic_mt_sse2,       anisotropic_mt_exp_sse2        }, { pmd_mt_sse2,      pmd_mt_exp_sse2        } }, SSE2 },
-    { gaussianH,       gaussianV,       NULL,                      { { anisotropic_mt,            anisotropic_mt                 }, { pmd_mt,           pmd_mt                 } }, NONE },
+    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx512vbmivnni, { { anisotropic_mt_avx512,     anisotropic_mt_exp_avx512      }, { pmd_mt_avx512,    pmd_mt_exp_avx512vnni      } }, AVX512VNNI|AVX512VBMI|AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX },
+    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx512,         { { anisotropic_mt_avx512,     anisotropic_mt_exp_avx512      }, { pmd_mt_avx512,    pmd_mt_exp_avx512          } }, AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX },
+    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx2vnni,       { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2_gather }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2vnni_gather } }, FAST_GATHER|AVX2VNNI|AVX2|FMA3|AVX },
+    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx2,           { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2        }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2vnni        } }, AVX2VNNI|AVX2|FMA3|AVX },
+    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx2,           { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2_gather }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2_gather     } }, FAST_GATHER|AVX2|FMA3|AVX },
+    { gaussianH_avx2,  gaussianV_avx2,  gaussianHV_avx2,           { { anisotropic_mt_avx2_fma3,  anisotropic_mt_exp_avx2        }, { pmd_mt_avx2_fma3, pmd_mt_exp_avx2            } }, AVX2|FMA3|AVX },
+    { gaussianH_avx,   gaussianV_avx,   NULL,                      { { anisotropic_mt_avx_fma3,   anisotropic_mt_exp_avx         }, { pmd_mt_avx_fma3,  pmd_mt_exp_avx             } }, FMA3|AVX },
+    { gaussianH_avx,   gaussianV_avx,   NULL,                      { { anisotropic_mt_avx_fma4,   anisotropic_mt_exp_avx         }, { pmd_mt_avx_fma4,  pmd_mt_exp_avx             } }, FMA4|AVX },
+    { gaussianH_avx,   gaussianV_avx,   NULL,                      { { anisotropic_mt_avx,        anisotropic_mt_exp_avx         }, { pmd_mt_avx,       pmd_mt_exp_avx             } }, AVX|SSE41|SSSE3|SSE2 },
+    { gaussianH_sse41, gaussianV_sse41, NULL,                      { { anisotropic_mt_sse41,      anisotropic_mt_exp_sse41       }, { pmd_mt_sse41,     pmd_mt_exp_sse41           } }, SSE41|SSSE3|SSE2 },
+    { gaussianH_ssse3, gaussianV_ssse3, NULL,                      { { anisotropic_mt_ssse3,      anisotropic_mt_exp_ssse3       }, { pmd_mt_ssse3,     pmd_mt_exp_ssse3           } }, SSSE3|SSE2 },
+    { gaussianH_sse2,  gaussianV_sse2,  NULL,                      { { anisotropic_mt_sse2,       anisotropic_mt_exp_sse2        }, { pmd_mt_sse2,      pmd_mt_exp_sse2            } }, SSE2 },
+    { gaussianH,       gaussianV,       NULL,                      { { anisotropic_mt,            anisotropic_mt                 }, { pmd_mt,           pmd_mt                     } }, NONE },
 };
 
 const PMD_MT_FUNC *get_pmd_func_list(const char *simd_select) {
@@ -122,6 +131,8 @@ const PMD_MT_FUNC *get_pmd_func_list(const char *simd_select) {
             simd_mask = AVX512VNNI|AVX512VBMI|AVX512BW|AVX512DQ|AVX512F|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
         } else if (strncmp(simd_select, "avx2nogather", strlen("avx2nogather")) == 0) {
             simd_mask = AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
+        } else if (strncmp(simd_select, "avx2vnni", strlen("avx2vnni")) == 0) {
+            simd_mask = FAST_GATHER|AVX2VNNI|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
         } else if (strncmp(simd_select, "avx2", strlen("avx2")) == 0) {
             simd_mask = FAST_GATHER|AVX2|FMA3|AVX|SSE41|SSSE3|SSE2|POPCNT;
         } else if (strncmp(simd_select, "avx", strlen("avx")) == 0) {
@@ -157,6 +168,8 @@ const char *simd_str(DWORD simd) {
     if (simd & (AVX512VBMI|AVX512VNNI)) return "avx512vbmi+vnni";
     if (simd & AVX512BW)   return "avx512bw";
     if (simd & AVX512F)    return "avx512f";
+    if ((simd & (AVX2|AVX2VNNI|FAST_GATHER)) == (AVX2|AVX2VNNI|FAST_GATHER)) return "avx2vnni+gather";
+    if ((simd & (AVX2|AVX2VNNI)) == (AVX2|AVX2VNNI)) return "avx2vnni";
     if ((simd & (AVX2|FAST_GATHER)) == (AVX2|FAST_GATHER)) return "avx2+gather";
     if (simd & AVX2)       return "avx2";
     if (simd & AVX)        return "avx";

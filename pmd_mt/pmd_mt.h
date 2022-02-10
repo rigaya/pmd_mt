@@ -43,6 +43,7 @@ void gaussianV_avx(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2);
 
 void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2);
+void gaussianHV_avx2vnni(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianHV_avx512(int thread_id, int thread_num, void *param1, void *param2);
 void gaussianHV_avx512vbmivnni(int thread_id, int thread_num, void *param1, void *param2);
 
@@ -63,7 +64,9 @@ void pmd_mt_exp_ssse3(int thread_id, int thread_num, void *param1, void *param2)
 void pmd_mt_exp_sse41(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_exp_avx2vnni(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx2_gather(int thread_id, int thread_num, void *param1, void *param2);
+void pmd_mt_exp_avx2vnni_gather(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx512(int thread_id, int thread_num, void *param1, void *param2);
 void pmd_mt_exp_avx512vnni(int thread_id, int thread_num, void *param1, void *param2);
 

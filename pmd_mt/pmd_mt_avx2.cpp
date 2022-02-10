@@ -22,6 +22,7 @@
 #include "pmd_mt_avx2.h"
 
 // y0*1 + y1*4 + y2*6 + y3*4 + y4*1
+template<bool avx_vnni>
 static __forceinline __m256i gaussian_1_4_6_4_1(__m256i y0, __m256i y1, __m256i y2, const __m256i& y3, const __m256i& y4) {
     static const __declspec(align(32)) short MULTIPLIZER[16] = { 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6, 4, 6 };
     y0 = _mm256_adds_epi16(y0, y4);
@@ -29,11 +30,16 @@ static __forceinline __m256i gaussian_1_4_6_4_1(__m256i y0, __m256i y1, __m256i 
 
     __m256i y0_lower = cvtlo256_epi16_epi32(y0);
     __m256i y0_upper = cvthi256_epi16_epi32(y0);
-    __m256i y1_lower = _mm256_madd_epi16(_mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
-    __m256i y1_upper = _mm256_madd_epi16(_mm256_unpackhi_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+    if (avx_vnni) {
+        y0_lower = _mm256_dpwssd_epi32(y0_lower, _mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+        y0_upper = _mm256_dpwssd_epi32(y0_upper, _mm256_unpackhi_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+    } else {
+        __m256i y1_lower = _mm256_madd_epi16(_mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+        __m256i y1_upper = _mm256_madd_epi16(_mm256_unpackhi_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+        y0_lower = _mm256_add_epi32(y0_lower, y1_lower);
+        y0_upper = _mm256_add_epi32(y0_upper, y1_upper);
+    }
 
-    y0_lower = _mm256_add_epi32(y0_lower, y1_lower);
-    y0_upper = _mm256_add_epi32(y0_upper, y1_upper);
     y0_lower = _mm256_srai_epi32(y0_lower, 4);
     y0_upper = _mm256_srai_epi32(y0_upper, 4);
 
@@ -57,7 +63,8 @@ static __forceinline void set_temp_buffer(int i_dst, int i_src, uint8_t *src_top
     }
 }
 
-void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+template <bool avx_vnni>
+void gaussianH_avx2_internal(int thread_id, int thread_num, void *param1, void *param2) {
     avx2_dummy();
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
     const int max_w = fpip->max_w;
@@ -98,7 +105,7 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
                     __m256i y2 = _mm256_load_si256((__m256i *)(tmp_ptr(y+2) + (i<<5)));
                     __m256i y3 = _mm256_load_si256((__m256i *)(tmp_ptr(y+3) + (i<<5)));
                     __m256i y4 = ySrc0;
-                    _mm256_storeu_si256((__m256i *)(buf + (i<<5)), gaussian_1_4_6_4_1(y0, y1, y2, y3, y4));
+                    _mm256_storeu_si256((__m256i *)(buf + (i<<5)), gaussian_1_4_6_4_1<avx_vnni>(y0, y1, y2, y3, y4));
 
                     _mm256_store_si256((__m256i *)(tmp_ptr(y+4) + (i<<5)), ySrc0);
                 };
@@ -113,6 +120,10 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
     _mm256_zeroupper();
 }
 
+void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+    return gaussianH_avx2_internal<false>(thread_id, thread_num, param1, param2);
+}
+
 // ySrc0   v-1, u-1, y-1, v-2, u-2, y-2,   x,   x
 // ySrc1    u2,  y2,  v1,  u1,  y1,  v0,  u0,  y0
 // ySrc2    y5,  v4,  u4,  y4,  v3,  u3,  y3,  v2
@@ -120,6 +131,7 @@ void gaussianH_avx2(int thread_id, int thread_num, void *param1, void *param2) {
 // ySrc4     x,   x,  v9,  u9,  y9,  v8,  u8,  y8
 
 //dst <= 横方向にガウシアンのかかった YC48_0 --- YC48_7
+template<bool avx_vnni>
 static __forceinline void guassianV_process(uint8_t *dst, __m256i ySrc0, __m256i ySrc1, __m256i ySrc2, const __m256i& ySrc3, const __m256i& ySrc4) {
     __m256i ySum0, ySum1, ySum2, ySum3, ySum4;
     ySum0 = _mm256_alignr256_epi8(ySrc1, ySrc0, (32-12));
@@ -128,7 +140,7 @@ static __forceinline void guassianV_process(uint8_t *dst, __m256i ySrc0, __m256i
     ySum3 = _mm256_alignr256_epi8(ySrc2, ySrc1,  6);
     ySum4 = _mm256_alignr256_epi8(ySrc2, ySrc1, 12);
 
-    _mm256_storeu_si256((__m256i *)(dst +  0), gaussian_1_4_6_4_1(ySum0, ySum1, ySum2, ySum3, ySum4));
+    _mm256_storeu_si256((__m256i *)(dst +  0), gaussian_1_4_6_4_1<avx_vnni>(ySum0, ySum1, ySum2, ySum3, ySum4));
 
     ySum0 = _mm256_alignr256_epi8(ySrc2, ySrc1, (32-12));
     ySum1 = _mm256_alignr256_epi8(ySrc2, ySrc1, (32- 6));
@@ -136,7 +148,7 @@ static __forceinline void guassianV_process(uint8_t *dst, __m256i ySrc0, __m256i
     ySum3 = _mm256_alignr256_epi8(ySrc3, ySrc2,  6);
     ySum4 = _mm256_alignr256_epi8(ySrc3, ySrc2, 12);
 
-    _mm256_storeu_si256((__m256i *)(dst + 32), gaussian_1_4_6_4_1(ySum0, ySum1, ySum2, ySum3, ySum4));
+    _mm256_storeu_si256((__m256i *)(dst + 32), gaussian_1_4_6_4_1<avx_vnni>(ySum0, ySum1, ySum2, ySum3, ySum4));
 
     ySum0 = _mm256_alignr256_epi8(ySrc3, ySrc2, (32-12));
     ySum1 = _mm256_alignr256_epi8(ySrc3, ySrc2, (32- 6));
@@ -144,10 +156,11 @@ static __forceinline void guassianV_process(uint8_t *dst, __m256i ySrc0, __m256i
     ySum3 = _mm256_alignr256_epi8(ySrc4, ySrc3,  6);
     ySum4 = _mm256_alignr256_epi8(ySrc4, ySrc3, 12);
 
-    _mm256_storeu_si256((__m256i *)(dst + 64), gaussian_1_4_6_4_1(ySum0, ySum1, ySum2, ySum3, ySum4));
+    _mm256_storeu_si256((__m256i *)(dst + 64), gaussian_1_4_6_4_1<avx_vnni>(ySum0, ySum1, ySum2, ySum3, ySum4));
 }
 
-void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+template<bool avx_vnni>
+void gaussianV_avx2_internal(int thread_id, int thread_num, void *param1, void *param2) {
     avx2_dummy();
     FILTER_PROC_INFO *fpip    = (FILTER_PROC_INFO *)param1;
     const int max_w = fpip->max_w;
@@ -174,7 +187,7 @@ void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
             ySrc3 = _mm256_loadu_si256((__m256i *)(buf + 64));
             ySrc4 = _mm256_loadu_si256((__m256i *)(buf + 96));
 
-            guassianV_process(dst, ySrc0, ySrc1, ySrc2, ySrc3, ySrc4);
+            guassianV_process<avx_vnni>(dst, ySrc0, ySrc1, ySrc2, ySrc3, ySrc4);
 
             ySrc0 = ySrc3;
             ySrc1 = ySrc4;
@@ -191,9 +204,13 @@ void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
         ySrc3 = _mm256_loadu_si256((__m256i *)(buf + 64));
         ySrc4 = _mm256_srli256_si256(ySrc3, (32-6));
         ySrc4 = _mm256_or_si256(ySrc4, _mm256_slli_si256(ySrc4, 6));
-        guassianV_process(dst, ySrc0, ySrc1, ySrc2, ySrc3, ySrc4);
+        guassianV_process<avx_vnni>(dst, ySrc0, ySrc1, ySrc2, ySrc3, ySrc4);
     }
     _mm256_zeroupper();
+}
+
+void gaussianV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+    return gaussianV_avx2_internal<false>(thread_id, thread_num, param1, param2);
 }
 
 
@@ -314,8 +331,9 @@ static __forceinline __m256i smooth_3x3_vertical(const __m256i &y0, const __m256
     return _mm256_srai_epi16(ySum, 2);
 }
 //1,4,6,4,1加算
+template<bool avx_vnni>
 static __forceinline __m256i smooth_5x5_vertical(const __m256i& y0, const __m256i &y1, const __m256i &y2, const __m256i &y3, const __m256i &y4) {
-    return gaussian_1_4_6_4_1(y0, y1, y2, y3, y4);
+    return gaussian_1_4_6_4_1<avx_vnni>(y0, y1, y2, y3, y4);
 }
 #pragma warning (push)
 #pragma warning (disable:4100) //warning C4100: 引数は関数の本体部で 1 度も参照されません。
@@ -337,8 +355,9 @@ static __forceinline __m256i smooth_3x3_horizontal(const __m256i &y0, const __m2
     );
 }
 //1,4,6,4,1加算
+template<bool avx_vnni>
 static __forceinline __m256i smooth_5x5_horizontal(const __m256i &y0, const __m256i &y1, const __m256i &y2) {
-    return smooth_5x5_vertical(
+    return smooth_5x5_vertical<avx_vnni>(
         _mm256_alignr256_epi8(y1, y0, (32 - 4)),
         _mm256_alignr256_epi8(y1, y0, (32 - 2)),
         y1,
@@ -362,12 +381,12 @@ static __forceinline __m256i smooth_7x7_horizontal(const __m256i &y0, const __m2
 }
 
 //rangeに応じてスムージング用の水平加算を行う
-template<int range>
+template<int range, bool avx_vnni>
 static __forceinline __m256i smooth_horizontal(const __m256i &y0, const __m256i &y1, const __m256i &y2) {
     static_assert(0 < range && range <= 2, "range >= 3 not implemeted!");
     switch (range) {
     case 3: return smooth_7x7_horizontal(y0, y1, y2);
-    case 2: return smooth_5x5_horizontal(y0, y1, y2);
+    case 2: return smooth_5x5_horizontal<avx_vnni>(y0, y1, y2);
     case 1:
     default:return smooth_3x3_horizontal(y0, y1, y2);
     }
@@ -380,7 +399,7 @@ static const uint16_t __declspec(align(32)) SMOOTH_BLEND_MASK[32] = {
 
 //スムージングでは、まず水平方向の加算結果をバッファに格納していく
 //この関数は1ラインぶんの水平方向の加算 + バッファへの格納のみを行う
-template<int range>
+template<int range, bool avx_vnni>
 static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src_ptr, int x_start, int x_fin, int width, const __m256i& smooth_mask) {
     __m256i yY0, yU0, yV0;
     if (x_start == 0) {
@@ -399,9 +418,9 @@ static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src
     __m256i yY2, yU2, yV2;
     for (int x = x_fin_align; x; x -= 16, src_ptr += 96, buf_ptr += 96) {
         afs_load_yc48<false>(yY2, yU2, yV2, src_ptr + 96);
-        _mm256_storeu_si256((__m256i *)(buf_ptr +  0), smooth_horizontal<range>(yY0, yY1, yY2));
-        _mm256_storeu_si256((__m256i *)(buf_ptr + 32), smooth_horizontal<range>(yU0, yU1, yU2));
-        _mm256_storeu_si256((__m256i *)(buf_ptr + 64), smooth_horizontal<range>(yV0, yV1, yV2));
+        _mm256_storeu_si256((__m256i *)(buf_ptr +  0), smooth_horizontal<range, avx_vnni>(yY0, yY1, yY2));
+        _mm256_storeu_si256((__m256i *)(buf_ptr + 32), smooth_horizontal<range, avx_vnni>(yU0, yU1, yU2));
+        _mm256_storeu_si256((__m256i *)(buf_ptr + 64), smooth_horizontal<range, avx_vnni>(yV0, yV1, yV2));
         yY0 = yY1; yY1 = yY2;
         yU0 = yU1; yU1 = yU2;
         yV0 = yV1; yV1 = yV2;
@@ -417,9 +436,9 @@ static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src
     } else {
         afs_load_yc48<false>(yY2, yU2, yV2, src_ptr + 96);
     }
-    _mm256_storeu_si256((__m256i *)(buf_ptr +  0), smooth_horizontal<range>(yY0, yY1, yY2));
-    _mm256_storeu_si256((__m256i *)(buf_ptr + 32), smooth_horizontal<range>(yU0, yU1, yU2));
-    _mm256_storeu_si256((__m256i *)(buf_ptr + 64), smooth_horizontal<range>(yV0, yV1, yV2));
+    _mm256_storeu_si256((__m256i *)(buf_ptr +  0), smooth_horizontal<range, avx_vnni>(yY0, yY1, yY2));
+    _mm256_storeu_si256((__m256i *)(buf_ptr + 32), smooth_horizontal<range, avx_vnni>(yU0, yU1, yU2));
+    _mm256_storeu_si256((__m256i *)(buf_ptr + 64), smooth_horizontal<range, avx_vnni>(yV0, yV1, yV2));
 }
 
 //バッファのライン数によるオフセットを計算する
@@ -430,7 +449,7 @@ static __forceinline void smooth_fill_buffer_yc48(char *buf_ptr, const char *src
 //yNewLineResultの最新のラインの水平加算結果と、バッファに格納済みの水平加算結果を用いて、
 //縦方向の加算を行い、スムージング結果を16bit整数に格納して返す。
 //yNewLineResultの値は、新たにバッファに格納される
-template<unsigned int range, int buf_line, int line_size>
+template<unsigned int range, int buf_line, int line_size, bool avx_vnni>
 static __forceinline void smooth_vertical(char *buf_ptr, __m256i& yResultY, __m256i &yResultU, __m256i &yResultV, int y) {
     __m256i yResultYOrg = yResultY;
     __m256i yResultUOrg = yResultU;
@@ -453,21 +472,21 @@ static __forceinline void smooth_vertical(char *buf_ptr, __m256i& yResultY, __m2
             yResultV
         );
     } else if (range == 2) {
-        yResultY = smooth_5x5_vertical(
+        yResultY = smooth_5x5_vertical<avx_vnni>(
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 0) + 0)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 1) + 0)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 2) + 0)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 3) + 0)),
             yResultY
         );
-        yResultU = smooth_5x5_vertical(
+        yResultU = smooth_5x5_vertical<avx_vnni>(
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 0) + 32)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 1) + 32)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 2) + 32)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 3) + 32)),
             yResultU
         );
-        yResultV = smooth_5x5_vertical(
+        yResultV = smooth_5x5_vertical<avx_vnni>(
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 0) + 64)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 1) + 64)),
             _mm256_loadu_si256((const __m256i *)(buf_ptr + BUF_LINE_OFFSET(y + 2) + 64)),
@@ -596,7 +615,7 @@ static __forceinline void smooth_vertical(char *buf_ptr, __m256i &yResultY, int 
 #pragma warning (pop)
 
 //line_sizeはpixel数x3
-template<int range, int line_size>
+template<int range, int line_size, bool avx_vnni>
 void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_pitch, int x_start, int x_fin, int y_start, int y_fin, int width, int height) {
     static_assert(0 < range && range <= 2, "0 < range && range <= 2");
     static_assert(((line_size/3) & ((line_size/3)-1)) == 0 && line_size % 3 == 0, "((line_size/3) & ((line_size/3)-1)) == 0 && line_size % 3 == 0");
@@ -615,7 +634,7 @@ void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_p
 
     //バッファのrange*2-1行目までを埋める (range*2行目はメインループ内でロードする)
     for (int i = (y_start == 0) ? 0 : -range; i < range; i++)
-        smooth_fill_buffer_yc48<range>((char *)(buffer + (i + range) * line_size), src + i * src_pitch, x_start, x_fin, width, smooth_mask);
+        smooth_fill_buffer_yc48<range, avx_vnni>((char *)(buffer + (i + range) * line_size), src + i * src_pitch, x_start, x_fin, width, smooth_mask);
 
     if (y_start == 0) {
         //range行目と同じものでバッファの1行目～range行目まで埋める
@@ -653,13 +672,13 @@ void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_p
             __m256i yY2, yU2, yV2;
             afs_load_yc48<false>(yY2, yU2, yV2, src_ptr + range_offset + 96);
             //連続するデータy0, y1, y2を使って水平方向の加算を行う
-            __m256i yResultY = smooth_horizontal<range>(yY0, yY1, yY2);
-            __m256i yResultU = smooth_horizontal<range>(yU0, yU1, yU2);
-            __m256i yResultV = smooth_horizontal<range>(yV0, yV1, yV2);
+            __m256i yResultY = smooth_horizontal<range, avx_vnni>(yY0, yY1, yY2);
+            __m256i yResultU = smooth_horizontal<range, avx_vnni>(yU0, yU1, yU2);
+            __m256i yResultV = smooth_horizontal<range, avx_vnni>(yV0, yV1, yV2);
             //yResultとバッファに格納されている水平方向の加算結果を合わせて
             //垂直方向の加算を行い、スムージングを完成させる
             //このループで得た水平加算結果はバッファに新たに格納される (不要になったものを上書き)
-            smooth_vertical<range, buf_line, line_size>(buf_ptr, yResultY, yResultU, yResultV, y);
+            smooth_vertical<range, buf_line, line_size, avx_vnni>(buf_ptr, yResultY, yResultU, yResultV, y);
 
             store_y_u_v_to_yc48(dst_ptr, yResultY, yResultU, yResultV);
 
@@ -681,10 +700,10 @@ void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_p
             afs_load_yc48<false>(yY2, yU2, yV2, src_ptr + range_offset + 96);
         }
 
-        __m256i yResultY = smooth_horizontal<range>(yY0, yY1, yY2);
-        __m256i yResultU = smooth_horizontal<range>(yU0, yU1, yU2);
-        __m256i yResultV = smooth_horizontal<range>(yV0, yV1, yV2);
-        smooth_vertical<range, buf_line, line_size>(buf_ptr, yResultY, yResultU, yResultV, y);
+        __m256i yResultY = smooth_horizontal<range, avx_vnni>(yY0, yY1, yY2);
+        __m256i yResultU = smooth_horizontal<range, avx_vnni>(yU0, yU1, yU2);
+        __m256i yResultV = smooth_horizontal<range, avx_vnni>(yV0, yV1, yV2);
+        smooth_vertical<range, buf_line, line_size, avx_vnni>(buf_ptr, yResultY, yResultU, yResultV, y);
 
         if (store_per_pix_on_edge) {
             store_y_u_v_to_yc48_per_pix(dst_ptr, yResultY, yResultU, yResultV, (x_fin - x_start) & 15);
@@ -704,14 +723,14 @@ void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_p
                 __m256i yResultY = _mm256_load_si256((__m256i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 0));
                 __m256i yResultU = _mm256_load_si256((__m256i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 32));
                 __m256i yResultV = _mm256_load_si256((__m256i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 64));
-                smooth_vertical<range, buf_line, line_size>(buf_ptr, yResultY, yResultU, yResultV, y);
+                smooth_vertical<range, buf_line, line_size, avx_vnni>(buf_ptr, yResultY, yResultU, yResultV, y);
 
                 store_y_u_v_to_yc48(dst_ptr, yResultY, yResultU, yResultV);
             }
             __m256i yResultY = _mm256_load_si256((__m256i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 0));
             __m256i yResultU = _mm256_load_si256((__m256i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 32));
             __m256i yResultV = _mm256_load_si256((__m256i *)(buf_ptr + BUF_LINE_OFFSET(y - 1 + range * 2) + 64));
-            smooth_vertical<range, buf_line, line_size>(buf_ptr, yResultY, yResultU, yResultV, y);
+            smooth_vertical<range, buf_line, line_size, avx_vnni>(buf_ptr, yResultY, yResultU, yResultV, y);
 
             if (store_per_pix_on_edge) {
                 store_y_u_v_to_yc48_per_pix(dst_ptr, yResultY, yResultU, yResultV, (x_fin - x_start) & 15);
@@ -722,7 +741,8 @@ void gaussHV_yc48_avx2_base(char *dst, int dst_pitch, const char *src, int src_p
     }
 }
 
-void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+template<bool avx_vnni>
+static __forceinline void gaussianHV_avx2_internal(int thread_id, int thread_num, void *param1, void *param2) {
     avx2_dummy();
     FILTER_PROC_INFO *fpip = (FILTER_PROC_INFO *)param1;
     const int max_w = fpip->max_w;
@@ -763,19 +783,27 @@ void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2) 
     if (id_x < scan_worker_x - 1) {
         for (; pos_x < x_fin; pos_x += analyze_block) {
             analyze_block = std::min(x_fin - pos_x, max_block_size);
-            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3, avx_vnni>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
     } else {
         for (; x_fin - pos_x > max_block_size; pos_x += analyze_block) {
             analyze_block = std::min(x_fin - pos_x, max_block_size);
-            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3, avx_vnni>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
         if (pos_x < w) {
             analyze_block = ((w - pos_x) + (min_analyze_cycle - 1)) & ~(min_analyze_cycle - 1);
             pos_x = w - analyze_block;
-            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
+            gaussHV_yc48_avx2_base<2, BLOCK_SIZE_YCP * 3, avx_vnni>((char *)ycp_dst, max_w * (int)sizeof(PIXEL_YC), (const char *)ycp_buf, max_w * (int)sizeof(PIXEL_YC), pos_x, pos_x + analyze_block, pos_y, y_fin, w, h);
         }
     }
+}
+
+void gaussianHV_avx2(int thread_id, int thread_num, void *param1, void *param2) {
+    return gaussianHV_avx2_internal<false>(thread_id, thread_num, param1, param2);
+}
+
+void gaussianHV_avx2vnni(int thread_id, int thread_num, void *param1, void *param2) {
+    return gaussianHV_avx2_internal<true>(thread_id, thread_num, param1, param2);
 }
 
 //---------------------------------------------------------------------
@@ -931,7 +959,11 @@ void pmd_mt_avx2_fma3(int thread_id, int thread_num, void *param1, void *param2)
 }
 
 void pmd_mt_exp_avx2(int thread_id, int thread_num, void *param1, void *param2) {
-    pmd_mt_exp_avx2_base(thread_id, thread_num, param1, param2);
+    pmd_mt_exp_avx2_base<false>(thread_id, thread_num, param1, param2);
+}
+
+void pmd_mt_exp_avx2vnni(int thread_id, int thread_num, void *param1, void *param2) {
+    pmd_mt_exp_avx2_base<true>(thread_id, thread_num, param1, param2);
 }
 
 template <bool use_stream>
