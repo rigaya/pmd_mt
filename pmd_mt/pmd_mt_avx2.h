@@ -211,8 +211,8 @@ static __forceinline void pmd_mt_exp_avx2_base(int thread_id, int thread_num, vo
             __m256i yAddLo = _mm256_madd_epi16(yELULo, _mm256_unpacklo_epi16(ySrcLowerDiff, ySrcUpperDiff));
             __m256i yAddHi = _mm256_madd_epi16(yELUHi, _mm256_unpackhi_epi16(ySrcLowerDiff, ySrcUpperDiff));
             if (avx2vnni) {
-                yAddLo = _mm256_dpwssd_epi32(yAddLo, yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
-                yAddHi = _mm256_dpwssd_epi32(yAddHi, yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
+                yAddLo = _mm256_dpwssd_avx_epi32(yAddLo, yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
+                yAddHi = _mm256_dpwssd_avx_epi32(yAddHi, yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));
             } else {
                 __m256i yAddLo1 = _mm256_madd_epi16(yERLLo, _mm256_unpacklo_epi16(ySrcRightDiff, ySrcLeftDiff));
                 __m256i yAddHi1 = _mm256_madd_epi16(yERLHi, _mm256_unpackhi_epi16(ySrcRightDiff, ySrcLeftDiff));

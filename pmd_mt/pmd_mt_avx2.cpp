@@ -31,8 +31,8 @@ static __forceinline __m256i gaussian_1_4_6_4_1(__m256i y0, __m256i y1, __m256i 
     __m256i y0_lower = cvtlo256_epi16_epi32(y0);
     __m256i y0_upper = cvthi256_epi16_epi32(y0);
     if (avx_vnni) {
-        y0_lower = _mm256_dpwssd_epi32(y0_lower, _mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
-        y0_upper = _mm256_dpwssd_epi32(y0_upper, _mm256_unpackhi_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+        y0_lower = _mm256_dpwssd_avx_epi32(y0_lower, _mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
+        y0_upper = _mm256_dpwssd_avx_epi32(y0_upper, _mm256_unpackhi_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
     } else {
         __m256i y1_lower = _mm256_madd_epi16(_mm256_unpacklo_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
         __m256i y1_upper = _mm256_madd_epi16(_mm256_unpackhi_epi16(y1, y2), _mm256_load_si256((__m256i *)MULTIPLIZER));
