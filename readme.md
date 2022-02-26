@@ -14,7 +14,7 @@
 [rigayaの日記兼メモ帳＞＞](http://rigaya34589.blog135.fc2.com/blog-category-18.html)
 
 ## 基本動作環境
-Windows 10 (x86/x64)  
+Windows 10, 11 (x86/x64)  
 Aviutl 1.00 以降 推奨
 
 ## PMD_MT 高速化版 使用にあたっての注意事項
