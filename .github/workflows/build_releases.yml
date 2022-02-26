@@ -62,8 +62,7 @@ jobs:
         id: archieve
         run: |
           cd ${{ matrix.platform }}\Release
-          7z a -mx9 pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip pmd_mt.auf
-          echo ::set-output name=pkgfile::${{ matrix.platform }}\Release\pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
+          7z a -mx9 pmd_mt.zip pmd_mt.auf
 
       - name: Create Release
         id: create_release
@@ -85,6 +84,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.build.archieve.pkgfile }}
+          asset_path: .\${{ matrix.platform }}\Release\pmd_mt.zip
           asset_name: pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
           asset_content_type: application/zip
