@@ -17,7 +17,7 @@ jobs:
       version_name: ${{ steps.rev.outputs.VERSION_NAME }}
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Set version name
@@ -25,13 +25,13 @@ jobs:
       run: |
         cd ${{ github.workspace }}
         REVCOUNT=`git rev-list --count HEAD`
-        echo "::set-output name=REV_COUNT::${REVCOUNT}"
+        echo "rev_count=${REVCOUNT}" >> $GITHUB_OUTPUT
         if [[ "${{ github.ref }}" =~ "refs/tags/" ]]; then
           VERSION=$(echo ${{ github.ref }} | sed -e "s#refs/tags/##g")
         else
           VERSION=r${REVCOUNT}
         fi
-        echo "::set-output name=VERSION_NAME::${VERSION}"
+        echo "version_name=${VERSION}" >> $GITHUB_OUTPUT
 
   build:
     name: Upload Release Asset
@@ -47,10 +47,10 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.0.2
+        uses: microsoft/setup-msbuild@v2
         with:
           msbuild-architecture: ${{ matrix.arch }}
 
@@ -62,28 +62,18 @@ jobs:
         id: archieve
         run: |
           cd ${{ matrix.platform }}\Release
-          7z a -mx9 pmd_mt.zip pmd_mt.auf
+          7z a -mx9 pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip pmd_mt.auf
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name:     ${{ needs.get_version_name.outputs.version_name }}
-          release_name: ${{ needs.get_version_name.outputs.version_name }}
-          draft: false
-          prerelease: false
+      - name: Calc hash
+        id: calc_hash
+        run: |
+          7z h -scrc* pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload Release Asset
-        id: upload_release_asset 
-        uses: actions/upload-release-asset@v1
+        id: upload-release-asset 
+        uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: .\${{ matrix.platform }}\Release\pmd_mt.zip
-          asset_name: pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
-          asset_content_type: application/zip
+          files: .\pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
