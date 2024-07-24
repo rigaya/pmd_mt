@@ -61,8 +61,11 @@ jobs:
       - name: Create Archieve
         id: archieve
         run: |
-          cd ${{ matrix.platform }}\Release
-          7z a -mx9 pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip pmd_mt.auf
+          mkdir release
+          copy ${{ matrix.platform }}\Release\pmd_mt.auf release
+          copy PMD_MT.txt release
+          copy PMD_MT_simd.txt release
+          7z a -mx9 pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip .\release\*
 
       - name: Calc hash
         id: calc_hash
@@ -76,4 +79,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: .\pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
+          files: pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmd_mt_${{ needs.get_version_name.outputs.version_name }}
+          path: pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
