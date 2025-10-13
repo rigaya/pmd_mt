@@ -65,12 +65,12 @@ jobs:
           copy ${{ matrix.platform }}\Release\pmd_mt.auf release
           copy PMD_MT.txt release
           copy PMD_MT_simd.txt release
-          7z a -mx9 pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip .\release\*
+          7z a -mx9 aviutl_pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip .\release\*
 
       - name: Calc hash
         id: calc_hash
         run: |
-          7z h -scrc* pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
+          7z h -scrc* aviutl_pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload Release Asset
         id: upload-release-asset 
@@ -79,13 +79,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: .\pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
+          files: aviutl_pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pmd_mt_${{ needs.get_version_name.outputs.version_name }}
-          path: pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
+          name: aviutl_pmd_mt_${{ needs.get_version_name.outputs.version_name }}
+          path: aviutl_pmd_mt_${{ needs.get_version_name.outputs.version_name }}.zip
 
   anm2_release:
     name: Upload anm2 Release Asset
