@@ -1,0 +1,171 @@
+@ノイズ除去(PMD)
+--label:加工
+--track0:強さ,0,100,100
+--track1:閾値,1,240,100
+--track2:回数,1,10,1,1
+--check0:useExp,0
+
+
+--[[pixelshader@ps_gauss:
+Texture2D texture0 : register(t0);
+
+int2 get_res()
+{
+    uint w_src_u, h_src_u;
+    texture0.GetDimensions(w_src_u, h_src_u);
+    return int2(w_src_u, h_src_u);
+}
+
+float4 load(int2 pos)
+{
+    return texture0.Load(int3(pos.x, pos.y, 0));
+}
+
+int2 clamp_pos(int2 p, int w, int h) {
+    p.x = clamp(p.x, 0, w-1);
+    p.y = clamp(p.y, 0, h-1);
+    return p;
+}
+
+float4 ps_gauss(float4 input : SV_Position) : SV_Target {
+    static const float weight[5] = { 1.0/16.0, 4.0/16.0, 6.0/16.0, 4.0/16.0, 1.0/16.0 };
+    int2 res = get_res();
+    int w = (int)res.x;
+    int h = (int)res.y;
+    int2 pos = int2(input.xy);
+    pos.x = clamp(pos.x, 0, w-1);
+    pos.y = clamp(pos.y, 0, h-1);
+
+    float4 src = load(pos);
+    // ガウス結果をRGBに格納（ガイドをRGB独立で使用）
+    float3 gauss_rgb = 0.0;
+    int2 base = pos - int2(2, 2);
+    [unroll]
+    for (int j = 0; j < 5; j++) {
+        float3 sum_line = 0.0;
+        [unroll]
+        for (int i = 0; i < 5; i++) {
+            int2 p = clamp_pos(base + int2(i, j), w, h);
+            sum_line += load(p).rgb * weight[i];
+        }
+        gauss_rgb += sum_line * weight[j];
+    }
+    return float4(gauss_rgb, src.a);
+}
+]]
+
+--[[pixelshader@ps_pmd:
+Texture2D srcTex : register(t0);
+Texture2D gaussTex : register(t1);
+cbuffer constant0 : register(b0) {
+    float strength2;        // strength / (4 * 100)
+    float inv_threshold2;   // 1 / pow(2, threshold/10 - 8)
+    float useExp;           // >0.5 -> use exp, else 1/(1+x)
+};
+
+int2 get_res()
+{
+    uint w_src_u, h_src_u;
+    srcTex.GetDimensions(w_src_u, h_src_u);
+    return int2(w_src_u, h_src_u);
+}
+
+float4 load(int2 pos)
+{
+    return srcTex.Load(int3(pos.x, pos.y, 0));
+}
+
+int2 clamp_pos(int2 p, int w, int h) {
+    p.x = clamp(p.x, 0, w-1);
+    p.y = clamp(p.y, 0, h-1);
+    return p;
+}
+
+float3 guide_rgb(int2 pos, int w, int h) {
+    return gaussTex.Load(int3(pos.x, pos.y, 0)).rgb;
+}
+
+float3 weight_from_diff3(float3 d) {
+    // inv_threshold2 は 0..1 正規化に対応するよう Lua 側で 255^2 を掛けて渡す
+    float3 d2 = d * d;
+    if (useExp > 0.5) {
+        return strength2 * exp(-d2 * inv_threshold2);
+    }
+    return strength2 / (1.0 + d2 * inv_threshold2);
+}
+
+float4 ps_pmd(float4 input : SV_Position) : SV_Target {
+    int2 res = get_res();
+    int w = (int)res.x;
+    int h = (int)res.y;
+    int2 pos = int2(input.xy);
+    pos = clamp_pos(pos, w, h);
+
+    // source colors (0..1)
+    float4 src4 = load(pos);
+    float3 clr = src4.rgb;
+    float3 clrym = load(clamp_pos(pos + int2( 0,-1), w, h)).rgb;
+    float3 clryp = load(clamp_pos(pos + int2( 0, 1), w, h)).rgb;
+    float3 clrxm = load(clamp_pos(pos + int2(-1, 0), w, h)).rgb;
+    float3 clrxp = load(clamp_pos(pos + int2( 1, 0), w, h)).rgb;
+
+    // guided rgb (0..1)
+    float3 g    = guide_rgb(pos, w, h);
+    float3 gym  = guide_rgb(clamp_pos(pos + int2( 0,-1), w, h), w, h);
+    float3 gyp  = guide_rgb(clamp_pos(pos + int2( 0, 1), w, h), w, h);
+    float3 gxm  = guide_rgb(clamp_pos(pos + int2(-1, 0), w, h), w, h);
+    float3 gxp  = guide_rgb(clamp_pos(pos + int2( 1, 0), w, h), w, h);
+
+    float3 wy  = weight_from_diff3(gym - g);
+    float3 wy2 = weight_from_diff3(gyp - g);
+    float3 wx  = weight_from_diff3(gxm - g);
+    float3 wx2 = weight_from_diff3(gxp - g);
+
+    float3 out01 = saturate(
+        clr
+        + wy  * (clrym - clr)
+        + wy2 * (clryp - clr)
+        + wx  * (clrxm - clr)
+        + wx2 * (clrxp - clr)
+    );
+    return float4(out01, src4.a);
+}
+]]
+
+
+-- 8bit 正規化でパラメータを調整
+local w, h = obj.w, obj.h;
+
+local loop_count = obj.track2
+
+local useExp  = 0
+if (obj.check0) then useExp = 1 end
+
+if (w < 1 or h < 1) then
+    obj.load("plane",0,0)
+else
+    local strength = obj.track0
+    local threshold = obj.track1
+    local range = 4.0
+    local strength2 = strength / (range * 100.0)
+    local threshold2 = 2.0 ^ (threshold / 10.0)
+    -- 0..1 正規化に合わせるため inv_threshold2 に 255^2 を掛ける
+    local inv_threshold2 = (1.0 / threshold2) * (4096.0 * 4096.0)
+
+    -- まずガウスを一度だけ計算し、RGBに格納（ガイド用）
+    obj.setoption("drawtarget", "tempbuffer", w, h)
+    obj.pixelshader("ps_gauss", "tempbuffer", "object")
+    obj.copybuffer("cache:pmd_gauss_tmp", "tempbuffer")
+
+    -- 交互に書き込み (ping-pong)
+    local src_name, dst_name = "object", "tempbuffer"
+    for i = 1, loop_count do
+        -- ps_pmd は t0=srcTex(現在フレーム), t1=gaussTex(事前ガウス) を同時サンプル
+        obj.pixelshader("ps_pmd", dst_name, { src_name, "cache:pmd_gauss_tmp" }, { strength2, inv_threshold2, useExp })
+        src_name, dst_name = dst_name, src_name
+    end
+    -- ループ回数が偶数のとき、結果は object に残る。奇数のとき tempbuffer にあるので戻す。
+    if (src_name ~= "object") then
+        obj.load("tempbuffer")
+    end
+end
